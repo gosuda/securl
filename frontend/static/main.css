@@ -66,4 +66,6 @@ THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
 body, html {
     font-family: 'IBM Plex Mono', monospace;
     font-weight: 500;
+    background-color: #121212; /* Apply dark background globally */
+    color: #e0e0e0; /* Apply light text color globally */
 }
