@@ -4,7 +4,8 @@
 
   import type { UrlInfo } from "$lib/types";
   import { Flags } from "$lib/types";
-
+  import { verifyPasswordAndCaptcha } from "$lib"; // Import the verification function
+ 
   let showShortenForm = true;
   let urlInfo: UrlInfo | null = null;
   let longUrl = "";
@@ -12,6 +13,9 @@
   let captchaForced = false;
   let passwordInput = ""; // State for password input
   let showPasswordInput = false; // State to control password input visibility
+  let captchaInput = ""; // State for captcha input
+  let captchaVerificationMessage = ""; // State for captcha verification message
+  let captchaVerified = false; // State to track if captcha is verified
 
   // Function to fetch URL info based on hash (simulated)
   async function getUrlInfoFromHash(hash: string): Promise<UrlInfo | null> {
@@ -107,10 +111,27 @@
     // In a real app, redirect directly
   }
 
+  // Function to handle captcha verification
+  async function handleCaptchaVerification() {
+    captchaVerificationMessage = "Verifying captcha...";
+    const success = await verifyPasswordAndCaptcha("", captchaInput); // Only send captcha
+    if (success) {
+      captchaVerificationMessage = "Captcha verification successful!";
+      captchaVerified = true;
+      // You might want to automatically proceed or show the next step here
+    } else {
+      captchaVerificationMessage = "Captcha verification failed. Please try again.";
+      captchaVerified = false;
+    }
+  }
+
   // Reactively show/hide password input based on checkbox
   $: showPasswordInput = urlInfo?.Flags
     ? (urlInfo.Flags & Flags.Password) > 0
     : false;
+
+  // Reactively show proceed buttons only if captcha is verified (if required)
+  $: showProceedButtons = !(urlInfo?.Flags && urlInfo.Flags & Flags.Captcha) || captchaVerified;
 </script>
 
 <h1>SecURL: Secure URL Shortener that respects user's privacy</h1>
@@ -184,8 +205,14 @@
       <div>
         <p>Captcha verification required to proceed.</p>
         <!-- Captcha implementation would go here -->
+        <label for="captcha">Enter Captcha:</label>
+        <input type="text" id="captcha" bind:value={captchaInput} required />
+        <button on:click={handleCaptchaVerification}>Verify Captcha</button>
+        {#if captchaVerificationMessage}
+          <p>{captchaVerificationMessage}</p>
+        {/if}
       </div>
-    {:else}
+    {:else if showProceedButtons}
       <div class="button-container">
         <button class="scan-button" on:click={handleScanProceed}>
           Proceed after scan
