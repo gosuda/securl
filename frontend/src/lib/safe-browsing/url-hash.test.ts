@@ -24,7 +24,9 @@ describe('Google Safe Browsing URL hashing', () => {
       ['http://www.google.com/foo\tbar\rbaz\n2', 'http://www.google.com/foobarbaz2'],
       ['http://www.gotaport.com:1234/', 'http://www.gotaport.com/'],
       ['http://host.com//twoslashes?more//slashes', 'http://host.com/twoslashes?more//slashes'],
-      ['http://host%23.com/%257Ea%2521b%2540c%2523d', 'http://host%23.com/~a!b@c%23d']
+      ['http://host%23.com/%257Ea%2521b%2540c%2523d', 'http://host%23.com/~a!b@c%23d'],
+      ['http://[::ffff:1.2.3.4]/', 'http://1.2.3.4/'],
+      ['http://[64:ff9b::1.2.3.4]/', 'http://1.2.3.4/']
     ]);
 
     for (const [input, expected] of fixtures) {

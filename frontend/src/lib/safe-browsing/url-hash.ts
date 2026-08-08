@@ -25,6 +25,37 @@ function percentDecodeRepeatedly(input: string): string {
   }
 }
 
+function parseIPv6Words(hostname: string): number[] | undefined {
+  if (!hostname.startsWith('[') || !hostname.endsWith(']')) return undefined;
+  const address = hostname.slice(1, -1);
+  const halves = address.split('::');
+  if (halves.length > 2) return undefined;
+  const parseHalf = (half: string): number[] | undefined => {
+    if (half === '') return [];
+    const words = half.split(':').map((word) => Number.parseInt(word, 16));
+    return words.every((word) => Number.isInteger(word) && word >= 0 && word <= 0xffff)
+      ? words
+      : undefined;
+  };
+  const left = parseHalf(halves[0]);
+  const right = parseHalf(halves[1] ?? '');
+  if (!left || !right) return undefined;
+  if (halves.length === 1) return left.length === 8 ? left : undefined;
+  const omitted = 8 - left.length - right.length;
+  if (omitted < 1) return undefined;
+  return [...left, ...Array<number>(omitted).fill(0), ...right];
+}
+
+function specialIPv4Address(hostname: string): string | undefined {
+  const words = parseIPv6Words(hostname);
+  if (!words) return undefined;
+  const ipv4Mapped = words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff;
+  const nat64 = words[0] === 0x64 && words[1] === 0xff9b &&
+    words.slice(2, 6).every((word) => word === 0);
+  if (!ipv4Mapped && !nat64) return undefined;
+  return [words[6] >>> 8, words[6] & 0xff, words[7] >>> 8, words[7] & 0xff].join('.');
+}
+
 function normalizeHostname(hostname: string): string {
   let normalized = hostname.replace(/^\.+|\.+$/g, '').replace(/\.+/g, '.').toLowerCase();
   if (/^[a-z0-9.\-[\]:\u0080-\uffff]+$/i.test(normalized)) {
@@ -34,7 +65,7 @@ function normalizeHostname(hostname: string): string {
       // Preserve unusual but parseable-by-the-caller bytes for the escaping pass below.
     }
   }
-  return normalized;
+  return specialIPv4Address(normalized) ?? normalized;
 }
 
 function normalizePath(path: string): string {
