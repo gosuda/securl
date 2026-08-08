@@ -141,7 +141,11 @@ SECURL_CAPTCHA_ALLOWED_HOSTNAMES=links.example
 
 ## PostgreSQL
 
-Set `SECURL_STORE_BACKEND=postgres` and `SECURL_POSTGRES_URL` to a PostgreSQL connection URL. SecURL applies the single embedded PostgreSQL schema migration automatically at startup under a PostgreSQL advisory lock.
+Set `SECURL_STORE_BACKEND=postgres` and `SECURL_POSTGRES_URL` to a PostgreSQL connection URL. SecURL reads `SELECT version()` at startup. PostgreSQL uses a transaction-scoped advisory lock while applying embedded migrations.
+
+## CockroachDB
+
+CockroachDB uses the same `SECURL_STORE_BACKEND=postgres` and `SECURL_POSTGRES_URL` settings. When `SELECT version()` contains `CockroachDB`, SecURL automatically disables the unsupported PostgreSQL advisory lock, executes each idempotent migration statement in its own implicit transaction, records versions with `ON CONFLICT DO NOTHING`, and retries SQLSTATE `40001` serialization failures. No additional compatibility setting is required.
 
 ## MariaDB
 
