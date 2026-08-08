@@ -1,0 +1,22 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: db/postgres/migrations
+    queries: db/postgres/query
+    gen:
+      go:
+        package: dbgen
+        out: internal/store/postgres/dbgen
+        sql_package: pgx/v5
+        emit_db_tags: true
+        emit_empty_slices: true
+  - engine: mysql
+    schema: db/mariadb/migrations
+    queries: db/mariadb/query
+    gen:
+      go:
+        package: dbgen
+        out: internal/store/mariadb/dbgen
+        sql_package: database/sql
+        emit_db_tags: true
+        emit_empty_slices: true

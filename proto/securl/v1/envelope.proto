@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package securl.v1;
+
+option go_package = "securl.click/securl/gen/go/securl/v1;securlv1";
+
+enum PasswordProfile {
+  PASSWORD_PROFILE_UNSPECIFIED = 0;
+  PASSWORD_PROFILE_ARGON2ID_V1 = 1;
+}
+
+enum FeatureFlag {
+  FEATURE_FLAG_UNSPECIFIED = 0;
+  FEATURE_FLAG_CAPTCHA = 1;
+  FEATURE_FLAG_PASSWORD = 2;
+  FEATURE_FLAG_BURN_AFTER_READ = 4;
+}
+
+message PasswordLayer {
+  bytes salt = 1;
+  bytes nonce = 2;
+  PasswordProfile profile = 3;
+}
+
+message CaptchaLayer {
+  bytes nonce = 1;
+}
+
+message EnvelopeMetadata {
+  uint32 protocol_version = 1;
+  uint32 feature_flags = 2;
+  // Zero means the envelope does not expire.
+  uint32 ttl_seconds = 3;
+  bytes payload_nonce = 4;
+  PasswordLayer password = 5;
+  CaptchaLayer captcha = 6;
+}
+
+message Envelope {
+  EnvelopeMetadata metadata = 1;
+  bytes ciphertext = 2;
+}
+
+message Payload {
+  string url = 1;
+}

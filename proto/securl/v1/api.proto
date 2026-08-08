@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package securl.v1;
+
+import "securl/v1/envelope.proto";
+
+option go_package = "securl.click/securl/gen/go/securl/v1;securlv1";
+
+enum CaptchaProvider {
+  CAPTCHA_PROVIDER_NONE = 0;
+  CAPTCHA_PROVIDER_TURNSTILE = 1;
+  CAPTCHA_PROVIDER_RECAPTCHA = 2;
+}
+
+message CreateEnvelopeRequest {
+  bytes storage_key = 1;
+  Envelope envelope = 2;
+  bytes captcha_key = 3;
+}
+
+message CreateEnvelopeResponse {
+  // Zero means the envelope does not expire.
+  int64 expires_at_unix = 1;
+  bool replayed = 2;
+}
+
+message GetEnvelopeMetadataResponse {
+  EnvelopeMetadata metadata = 1;
+  // Zero means the envelope does not expire.
+  int64 expires_at_unix = 2;
+}
+
+message AccessEnvelopeRequest {
+  string captcha_token = 1;
+}
+
+message AccessEnvelopeResponse {
+  Envelope envelope = 1;
+  bytes captcha_key = 2;
+  // Zero means the envelope does not expire.
+  int64 expires_at_unix = 3;
+}
+
+message RuntimeConfig {
+  bool safe_browsing_enabled = 1;
+  CaptchaProvider captcha_provider = 2;
+  string captcha_site_key = 3;
+  // Includes zero when non-expiring envelopes are allowed.
+  repeated uint32 allowed_ttl_seconds = 4;
+  // Zero selects a non-expiring envelope by default.
+  uint32 default_ttl_seconds = 5;
+  uint32 max_url_bytes = 6;
+}
+
+message SafeBrowsingLookupRequest {
+  repeated bytes hash_prefixes = 1;
+}
+
+message SafeBrowsingFullHash {
+  bytes full_hash = 1;
+  string threat_type = 2;
+  repeated string attributes = 3;
+  uint32 cache_seconds = 4;
+}
+
+message SafeBrowsingLookupResponse {
+  repeated SafeBrowsingFullHash full_hashes = 1;
+}
+
+message ErrorResponse {
+  string code = 1;
+  string message = 2;
+  string request_id = 3;
+}

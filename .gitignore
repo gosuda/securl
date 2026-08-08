@@ -90,6 +90,9 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
+!internal/frontend/dist/
+internal/frontend/dist/*
+!internal/frontend/dist/.placeholder
 
 # Gatsby files
 .cache/
@@ -134,3 +137,11 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+
+# Playwright output
+frontend/test-results/
+frontend/playwright-report/
+
+# Local root binary from `go build ./cmd/securl`
+/securl

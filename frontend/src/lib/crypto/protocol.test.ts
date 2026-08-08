@@ -1,0 +1,150 @@
+import { create } from '@bufbuild/protobuf';
+import { bytesToHex, hexToBytes } from '@noble/ciphers/utils.js';
+import { describe, expect, it } from 'vitest';
+import {
+  CaptchaLayerSchema,
+  EnvelopeMetadataSchema,
+  EnvelopeSchema,
+  PasswordLayerSchema,
+  PasswordProfile
+} from '../gen/securl/v1/envelope_pb.js';
+import {
+  decryptEnvelope,
+  deriveEncryptionKeyMaterial,
+  deriveFinalKey,
+  deriveStorageKey,
+  encodeStorageKey,
+  encryptEnvelope,
+  sealLayer
+} from './protocol';
+
+describe('SecURL HKDF-SHA3-256 protocol', () => {
+  const idBytes = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]);
+  const payloadNonce = new Uint8Array(Array.from({ length: 24 }, (_, index) => index));
+
+  it('matches the fixed storage and encryption key vectors', () => {
+    const storageKey = deriveStorageKey(idBytes, 'BÜCHER.Example.');
+    const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
+
+    expect(bytesToHex(storageKey)).toBe(
+      '0b335c693aba8aa1a1cfc4a4358ded9a52ef2b728626946193c8302d9a6756a3'
+    );
+    expect(bytesToHex(keyMaterial)).toBe(
+      'ce5d43ea7c46baf44ab56b16d455f021db972374f300ab7b312a63c5e9ad94d4'
+    );
+    expect(encodeStorageKey(storageKey)).toBe('CzNcaTq6iqGhz8SkNY3tmlLvK3KGJpRhk8gwLZpnVqM');
+    expect(encodeStorageKey(storageKey)).toHaveLength(43);
+  });
+
+  it('separates domains while canonical Unicode and Punycode domains share a namespace', () => {
+    const unicode = deriveStorageKey(idBytes, 'BÜCHER.Example.');
+    const punycode = deriveStorageKey(idBytes, 'xn--bcher-kva.example');
+    const otherDomain = deriveStorageKey(idBytes, 'other.example');
+    expect(unicode).toEqual(punycode);
+    expect(otherDomain).not.toEqual(unicode);
+  });
+
+  it('binds the final key to both ID and payload nonce', () => {
+    const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
+    const finalKey = deriveFinalKey(keyMaterial, idBytes, payloadNonce);
+    expect(bytesToHex(finalKey)).toBe(
+      '39406d8270ed8d5a6d4f5dbd7e0d09fc7f6c4436b5cf97ec367baaedf66ab2d4'
+    );
+
+    const changedNonce = payloadNonce.slice();
+    changedNonce[23] ^= 1;
+    expect(deriveFinalKey(keyMaterial, idBytes, changedNonce)).not.toEqual(finalKey);
+  });
+
+  it('matches the IETF XChaCha20-Poly1305 known-answer vector', () => {
+    const plaintext = hexToBytes(
+      '4c616469657320616e642047656e746c656d656e206f662074686520636c6173' +
+        '73206f66202739393a204966204920636f756c64206f6666657220796f75206f' +
+        '6e6c79206f6e652074697020666f7220746865206675747572652c2073756e73' +
+        '637265656e20776f756c642062652069742e'
+    );
+    const sealed = sealLayer(
+      hexToBytes('808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f'),
+      hexToBytes('404142434445464748494a4b4c4d4e4f5051525354555657'),
+      plaintext,
+      hexToBytes('50515253c0c1c2c3c4c5c6c7')
+    );
+
+    expect(bytesToHex(sealed)).toBe(
+      'bd6d179d3e83d43b9576579493c0e939572a1700252bfaccbed2902c21396cbb' +
+        '731c7f1b0b4aa6440bf3a82f4eda7e39ae64c6708c54c216cb96b72e1213b452' +
+        '2f8c9ba40db5d945b11b69b982c1bb9e3f3fac2bc369488f76b2383565d3fff9' +
+        '21f9664c97637da9768812f615c68b13b52e' +
+        'c0875924c1c7987947deafd8780acf49'
+    );
+  });
+
+  it('encrypts payload, password, and CAPTCHA layers and decrypts in reverse', () => {
+    let randomByte = 1;
+    const randomBytes = (length: number) => new Uint8Array(length).fill(randomByte++);
+    const passwordKey = new Uint8Array(32).fill(0x41);
+    const captchaKey = new Uint8Array(32).fill(0x42);
+    const envelope = encryptEnvelope('https://example.com/path?x=1', idBytes, {
+      ttlSeconds: 604800,
+      password: { key: passwordKey, salt: new Uint8Array(16).fill(0x51) },
+      captchaKey,
+      burnAfterRead: true,
+      randomBytes
+    });
+
+    expect(envelope.metadata?.featureFlags).toBe(7);
+    expect(envelope.metadata?.payloadNonce).toEqual(new Uint8Array(24).fill(1));
+    expect(envelope.metadata?.password?.nonce).toEqual(new Uint8Array(24).fill(2));
+    expect(envelope.metadata?.captcha?.nonce).toEqual(new Uint8Array(24).fill(3));
+    expect(
+      decryptEnvelope(envelope, idBytes, { passwordKey, captchaKey })
+    ).toBe('https://example.com/path?x=1');
+    expect(() => decryptEnvelope(envelope, idBytes, { passwordKey })).toThrow(/CAPTCHA key/);
+    expect(() => decryptEnvelope(envelope, idBytes, { captchaKey })).toThrow(/Password key/);
+  });
+
+  it('uses a zero TTL sentinel for envelopes that never expire', () => {
+    const envelope = encryptEnvelope('https://example.com/forever', idBytes, {
+      ttlSeconds: 0,
+      randomBytes: (length) => new Uint8Array(length).fill(0x44)
+    });
+    expect(envelope.metadata?.ttlSeconds).toBe(0);
+    expect(decryptEnvelope(envelope, idBytes)).toBe('https://example.com/forever');
+  });
+
+  it('fails authentication if metadata AAD is changed', () => {
+    const passwordKey = new Uint8Array(32).fill(0x61);
+    const captchaKey = new Uint8Array(32).fill(0x62);
+    const original = encryptEnvelope('https://example.com/', idBytes, {
+      ttlSeconds: 3600,
+      password: { key: passwordKey, salt: new Uint8Array(16).fill(0x63) },
+      captchaKey,
+      randomBytes: (length) => new Uint8Array(length).fill(0x64)
+    });
+    const metadata = original.metadata!;
+    const tamperedMetadata = create(EnvelopeMetadataSchema, {
+      protocolVersion: metadata.protocolVersion,
+      featureFlags: metadata.featureFlags,
+      ttlSeconds: metadata.ttlSeconds + 1,
+      payloadNonce: metadata.payloadNonce,
+      password: create(PasswordLayerSchema, {
+        salt: metadata.password!.salt,
+        nonce: metadata.password!.nonce,
+        profile: PasswordProfile.ARGON2ID_V1
+      }),
+      captcha: create(CaptchaLayerSchema, { nonce: metadata.captcha!.nonce })
+    });
+    const tampered = create(EnvelopeSchema, {
+      metadata: tamperedMetadata,
+      ciphertext: original.ciphertext
+    });
+
+    expect(() => decryptEnvelope(tampered, idBytes, { passwordKey, captchaKey })).toThrow();
+  });
+
+  it('rejects non-protocol key and nonce lengths', () => {
+    expect(() => deriveStorageKey(new Uint8Array(7), 'example.com')).toThrow(/8 bytes/);
+    expect(() => deriveFinalKey(new Uint8Array(31), idBytes, payloadNonce)).toThrow(/32 bytes/);
+    expect(() => deriveFinalKey(new Uint8Array(32), idBytes, new Uint8Array(23))).toThrow(/24 bytes/);
+  });
+});

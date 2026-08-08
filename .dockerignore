@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+!.env.example
+**/node_modules
+frontend/.svelte-kit
+frontend/build
+internal/frontend/dist
+coverage
+*.log
+*.pid
+.DS_Store

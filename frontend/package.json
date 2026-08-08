@@ -1,0 +1,36 @@
+{
+  "name": "securl-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build && node scripts/ensure-embed.mjs",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync || echo ''",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "proto:lint": "cd .. && ./frontend/node_modules/.bin/buf lint",
+    "proto:generate": "cd .. && ./frontend/node_modules/.bin/buf generate",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.13.0",
+    "@noble/ciphers": "2.2.0",
+    "@noble/hashes": "2.3.0"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "1.72.0",
+    "@bufbuild/protoc-gen-es": "2.13.0",
+    "@playwright/test": "1.62.1",
+    "@sveltejs/adapter-static": "3.0.10",
+    "@sveltejs/kit": "2.70.2",
+    "@sveltejs/vite-plugin-svelte": "7.1.2",
+    "svelte": "5.56.8",
+    "svelte-check": "4.6.0",
+    "typescript": "6.0.3",
+    "vite": "8.0.16",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,15 @@
+version: v2
+plugins:
+  - local: ["go", "tool", "protoc-gen-go"]
+    out: gen/go
+    opt:
+      - paths=source_relative
+  - local: ["go", "tool", "protoc-gen-go-vtproto"]
+    out: gen/go
+    opt:
+      - paths=source_relative
+      - features=marshal+unmarshal+size+marshal_strict
+  - local: frontend/node_modules/.bin/protoc-gen-es
+    out: frontend/src/lib/gen
+    opt:
+      - target=ts
