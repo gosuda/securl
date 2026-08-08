@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	securlv1 "securl.click/securl/gen/go/securl/v1"
+	"securl.click/securl/internal/captcha"
 	"securl.click/securl/internal/store"
 	"securl.click/securl/internal/store/memory"
 )
@@ -51,6 +53,75 @@ func postProtobuf(router http.Handler, path string, body []byte) *httptest.Respo
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	return response
+}
+
+type singleUseCreateVerifier struct {
+	calls int
+}
+
+func (verifier *singleUseCreateVerifier) Verify(_ context.Context, token string) error {
+	if token != "valid-create-token" {
+		return captcha.ErrCaptchaFailed
+	}
+	verifier.calls++
+	if verifier.calls > 1 {
+		return captcha.ErrCaptchaFailed
+	}
+	return nil
+}
+
+func TestCreateRequiresVerifiedCaptchaAndReplaysWithoutReverification(t *testing.T) {
+	repository := memory.New()
+	verifier := &singleUseCreateVerifier{}
+	router := NewRouter(Dependencies{
+		Repository:      repository,
+		CaptchaVerifier: verifier,
+		RuntimeConfig: &securlv1.RuntimeConfig{
+			CaptchaProvider:       securlv1.CaptchaProvider_CAPTCHA_PROVIDER_TURNSTILE,
+			CreateCaptchaRequired: true,
+			AllowedTtlSeconds:     []uint32{3600},
+			DefaultTtlSeconds:     3600,
+			MaxUrlBytes:           4096,
+		},
+		AllowedTTLs: map[uint32]struct{}{3600: {}},
+		Now:         func() time.Time { return time.Unix(10000, 0).UTC() },
+	})
+	missing := postProtobuf(router, "/api/v1/envelopes", validCreateBody(t))
+	if missing.Code != http.StatusForbidden {
+		t.Fatalf("missing token status=%d body=%x", missing.Code, missing.Body.Bytes())
+	}
+
+	var createRequest securlv1.CreateEnvelopeRequest
+	if err := decodeCanonical(validCreateBody(t), &createRequest); err != nil {
+		t.Fatal(err)
+	}
+	createRequest.CaptchaToken = "invalid"
+	invalidBody, err := createRequest.MarshalVTStrict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := postProtobuf(router, "/api/v1/envelopes", invalidBody)
+	if invalid.Code != http.StatusForbidden {
+		t.Fatalf("invalid token status=%d body=%x", invalid.Code, invalid.Body.Bytes())
+	}
+	var storageKey [32]byte
+	if _, err := repository.Get(context.Background(), storageKey, time.Unix(0, 0)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unsolved create stored record: %v", err)
+	}
+
+	createRequest.CaptchaToken = "valid-create-token"
+	validBody, err := createRequest.MarshalVTStrict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := postProtobuf(router, "/api/v1/envelopes", validBody)
+	replayed := postProtobuf(router, "/api/v1/envelopes", validBody)
+	if created.Code != http.StatusCreated || replayed.Code != http.StatusOK || verifier.calls != 1 {
+		t.Fatalf("created=%d replayed=%d verifier calls=%d", created.Code, replayed.Code, verifier.calls)
+	}
+	if _, err := repository.Get(context.Background(), storageKey, time.Unix(10000, 0)); err != nil {
+		t.Fatalf("solved create missing record: %v", err)
+	}
 }
 
 func TestCreateRejectsMalformedUnknownDuplicateAndNonCanonicalWireData(t *testing.T) {

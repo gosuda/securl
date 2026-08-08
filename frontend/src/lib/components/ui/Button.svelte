@@ -4,6 +4,15 @@
   export let disabled = false;
 </script>
 
-<button {type} {disabled} class:secondary={variant === 'secondary'} class:danger={variant === 'danger'} on:click {...$$restProps}>
+<button
+  {type}
+  {disabled}
+  class="btn"
+  class:secondary={variant === 'secondary'}
+  class:danger={variant === 'danger'}
+  aria-disabled={disabled}
+  on:click
+  {...$$restProps}
+>
   <slot />
 </button>

@@ -118,11 +118,10 @@ func validateCreateInput(input store.CreateInput) error {
 	if len(input.Metadata) == 0 || len(input.Envelope) == 0 {
 		return store.ErrInvalid
 	}
-	if (len(input.CaptchaKeyNonce) == 0) != (len(input.CaptchaKeyCiphertext) == 0) {
-		return store.ErrInvalid
-	}
-	if len(input.CaptchaKeyNonce) != 0 && len(input.CaptchaKeyNonce) != 12 {
-		return store.ErrInvalid
+	if len(input.CaptchaKeyNonce) != 0 || len(input.CaptchaKeyCiphertext) != 0 {
+		if len(input.CaptchaKeyNonce) != 12 || len(input.CaptchaKeyCiphertext) == 0 {
+			return store.ErrInvalid
+		}
 	}
 	return nil
 }

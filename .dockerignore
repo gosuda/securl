@@ -10,3 +10,4 @@ coverage
 *.log
 *.pid
 .DS_Store
+.agents

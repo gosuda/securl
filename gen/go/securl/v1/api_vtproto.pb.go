@@ -48,6 +48,13 @@ func (m *CreateEnvelopeRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error)
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.CaptchaToken) > 0 {
+		i -= len(m.CaptchaToken)
+		copy(dAtA[i:], m.CaptchaToken)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.CaptchaToken)))
+		i--
+		dAtA[i] = 0x22
+	}
 	if len(m.CaptchaKey) > 0 {
 		i -= len(m.CaptchaKey)
 		copy(dAtA[i:], m.CaptchaKey)
@@ -295,6 +302,16 @@ func (m *RuntimeConfig) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.CreateCaptchaRequired {
+		i--
+		if m.CreateCaptchaRequired {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x38
 	}
 	if m.MaxUrlBytes != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.MaxUrlBytes))
@@ -583,6 +600,13 @@ func (m *CreateEnvelopeRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, 
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.CaptchaToken) > 0 {
+		i -= len(m.CaptchaToken)
+		copy(dAtA[i:], m.CaptchaToken)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.CaptchaToken)))
+		i--
+		dAtA[i] = 0x22
+	}
 	if len(m.CaptchaKey) > 0 {
 		i -= len(m.CaptchaKey)
 		copy(dAtA[i:], m.CaptchaKey)
@@ -830,6 +854,16 @@ func (m *RuntimeConfig) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.CreateCaptchaRequired {
+		i--
+		if m.CreateCaptchaRequired {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x38
 	}
 	if m.MaxUrlBytes != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.MaxUrlBytes))
@@ -1106,6 +1140,10 @@ func (m *CreateEnvelopeRequest) SizeVT() (n int) {
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
+	l = len(m.CaptchaToken)
+	if l > 0 {
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -1206,6 +1244,9 @@ func (m *RuntimeConfig) SizeVT() (n int) {
 	}
 	if m.MaxUrlBytes != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.MaxUrlBytes))
+	}
+	if m.CreateCaptchaRequired {
+		n += 2
 	}
 	n += len(m.unknownFields)
 	return n
@@ -1424,6 +1465,38 @@ func (m *CreateEnvelopeRequest) UnmarshalVT(dAtA []byte) error {
 			if m.CaptchaKey == nil {
 				m.CaptchaKey = []byte{}
 			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CaptchaToken", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CaptchaToken = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -2080,6 +2153,26 @@ func (m *RuntimeConfig) UnmarshalVT(dAtA []byte) error {
 					break
 				}
 			}
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CreateCaptchaRequired", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.CreateCaptchaRequired = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

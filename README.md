@@ -58,6 +58,7 @@ When Safe Browsing is disabled, protected links require an explicit user action 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `SECURL_CAPTCHA_PROVIDER` | `none` | CAPTCHA provider: `none`, `turnstile`, or `recaptcha`. |
+| `SECURL_CREATE_CAPTCHA_REQUIRED` | `false` | Requires a successful CAPTCHA challenge before the server accepts a new protected link. Requires a configured CAPTCHA provider. |
 | `SECURL_CAPTCHA_SITE_KEY` | empty | Public provider site key. Required when the provider is not `none`. |
 | `SECURL_CAPTCHA_SECRET_KEY` | empty | Server-side provider secret. Required when the provider is not `none`. |
 | `SECURL_CAPTCHA_WRAP_KEY` | empty | Canonical unpadded base64url encoding of exactly 32 random bytes. Required when the provider is not `none`; used to encrypt CAPTCHA release keys at rest. |
@@ -70,6 +71,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
 All three CAPTCHA key variables are required together when `SECURL_CAPTCHA_PROVIDER` is `turnstile` or `recaptcha`.
+
+Set `SECURL_CREATE_CAPTCHA_REQUIRED=true` to challenge link creators before submission. Recipient CAPTCHA protection remains an independent per-link option.
 
 ### Frontend build and test variables
 
@@ -132,6 +135,7 @@ SECURL_CAPTCHA_PROVIDER=turnstile
 SECURL_CAPTCHA_SITE_KEY=your-site-key
 SECURL_CAPTCHA_SECRET_KEY=your-secret-key
 SECURL_CAPTCHA_WRAP_KEY=your-32-byte-base64url-key
+SECURL_CREATE_CAPTCHA_REQUIRED=true
 SECURL_CAPTCHA_ALLOWED_HOSTNAMES=links.example
 ```
 

@@ -57,8 +57,8 @@
 <div bind:this={root}>
 {#if !enabled}
   <Panel>
-    <h2 tabindex="-1">Safety check is disabled</h2>
-    <p>SecURL cannot automatically verify this destination.</p>
+    <h2 tabindex="-1">Safety check is off</h2>
+    <p>Review the destination before opening it.</p>
     <code class="hostname">{destination.hostname}</code>
     <Button on:click={redirect}>Open destination</Button>
   </Panel>
@@ -67,7 +67,7 @@
 {:else if snapshot.scanState === 'error'}
   <Panel tone="warning">
     <h2 tabindex="-1">Safety check unavailable</h2>
-    <p>Safety check unavailable. SecURL could not verify this destination.</p>
+    <p>We couldn’t check this destination.</p>
     <code class="hostname">{destination.hostname}</code>
     <div class="actions">
       <Button on:click={() => coordinator?.openWithoutSafetyCheck()}>Open without safety check</Button>
@@ -79,7 +79,7 @@
     <h2 tabindex="-1">Checking destination safety</h2>
     <code class="hostname">{destination.hostname}</code>
     <ProgressCountdown remaining={snapshot.remainingSeconds} />
-    <p>{snapshot.countdownDone && snapshot.scanState === 'scanning' ? 'Finishing the safety check…' : 'Google Safe Browsing check in progress.'}</p>
+    <p>{snapshot.countdownDone && snapshot.scanState === 'scanning' ? 'Finishing the check…' : 'We’ll open it when the check finishes.'}</p>
     {#if !snapshot.countdownDone}
       <Button variant="secondary" on:click={() => coordinator?.openAfterSafetyCheck()}>
         Check now and open

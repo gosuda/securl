@@ -27,11 +27,7 @@ type Service struct {
 	wrapper    *captcha.KeyWrapper
 }
 
-func NewService(
-	repository store.Repository,
-	verifier captcha.Verifier,
-	wrapper *captcha.KeyWrapper,
-) *Service {
+func NewService(repository store.Repository, verifier captcha.Verifier, wrapper *captcha.KeyWrapper) *Service {
 	return &Service{repository: repository, verifier: verifier, wrapper: wrapper}
 }
 
@@ -54,8 +50,8 @@ func (service *Service) Access(
 		return Result{}, ErrInvalidAccessRecord
 	}
 	if captchaEnabled {
-		if service.verifier == nil || service.wrapper == nil ||
-			len(record.CaptchaKeyNonce) != 12 || len(record.CaptchaKeyCiphertext) == 0 {
+		if service.verifier == nil || service.wrapper == nil || len(record.CaptchaKeyNonce) != 12 ||
+			len(record.CaptchaKeyCiphertext) == 0 {
 			return Result{}, ErrInvalidAccessRecord
 		}
 		if err := service.verifier.Verify(ctx, captchaToken); err != nil {

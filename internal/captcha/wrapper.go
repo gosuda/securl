@@ -16,15 +16,20 @@ type KeyWrapper struct {
 	aead cipher.AEAD
 }
 
+func zeroBytes(value []byte) {
+	for index := range value {
+		value[index] = 0
+	}
+}
+
 func NewKeyWrapper(encodedKey string) (*KeyWrapper, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(encodedKey)
-	if err != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) != encodedKey {
+	key, err := base64.RawURLEncoding.DecodeString(encodedKey)
+	if err != nil || len(key) != 32 || base64.RawURLEncoding.EncodeToString(key) != encodedKey {
+		zeroBytes(key)
 		return nil, ErrInvalidWrappedKey
 	}
-	block, err := aes.NewCipher(decoded)
-	for index := range decoded {
-		decoded[index] = 0
-	}
+	block, err := aes.NewCipher(key)
+	zeroBytes(key)
 	if err != nil {
 		return nil, err
 	}
@@ -69,11 +74,7 @@ func (wrapper *KeyWrapper) Unwrap(
 	}
 	plaintext, err := wrapper.aead.Open(nil, nonce, ciphertext, wrapAAD(storageKey, protocolVersion))
 	if err != nil || len(plaintext) != 32 {
-		if plaintext != nil {
-			for index := range plaintext {
-				plaintext[index] = 0
-			}
-		}
+		zeroBytes(plaintext)
 		return nil, ErrInvalidWrappedKey
 	}
 	return plaintext, nil

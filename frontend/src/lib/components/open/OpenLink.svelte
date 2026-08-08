@@ -130,14 +130,26 @@
 
   function fail(error: unknown) {
     state = 'terminal-error';
-    errorMessage = error instanceof Error ? error.message : 'This protected link could not be opened.';
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'Envelope not found.') {
+      errorMessage = 'This link is no longer available.';
+    } else if (passwordEnabled) {
+      errorMessage = 'This link couldn’t be opened. Check the password or ask for a new link.';
+    } else {
+      errorMessage = 'This link couldn’t be opened. Ask for a new link.';
+    }
   }
 </script>
 
-<main bind:this={root} class="shell" aria-busy={['parsing', 'metadata', 'fetching', 'consuming', 'decrypting'].includes(state)}>
+<main
+  bind:this={root}
+  class="shell"
+  data-state={state}
+  aria-busy={['parsing', 'metadata', 'fetching', 'consuming', 'decrypting'].includes(state)}
+>
   <header class="page-header">
-    <p class="eyebrow">Protected link</p>
     <h1 tabindex="-1">Open a protected link</h1>
+    <p>We’ll take you to the destination when it’s ready.</p>
   </header>
 
   {#if state === 'terminal-error'}
@@ -147,7 +159,6 @@
       provider={config.captchaProvider}
       siteKey={config.captchaSiteKey}
       on:verified={(event) => captchaVerified(event.detail)}
-      on:error={(event) => fail(new Error(event.detail))}
     />
   {:else if state === 'gate' && gate === 'password'}
     <PasswordGate {burnAfterRead} on:submit={(event) => passwordSubmitted(event.detail)} />
@@ -155,12 +166,7 @@
     <RedirectGate {destination} enabled={config.safeBrowsingEnabled} />
   {:else}
     <Panel>
-      <h2 tabindex="-1">
-        {state === 'parsing' ? 'Reading the link secret' :
-         state === 'metadata' ? 'Loading encrypted metadata' :
-         state === 'consuming' ? 'Retrieving and deleting encrypted data' :
-         state === 'decrypting' ? 'Decrypting in this browser' : 'Retrieving encrypted data'}
-      </h2>
+      <h2 tabindex="-1">Opening your link</h2>
       <p class="status-line"><Spinner /> Please wait…</p>
     </Panel>
   {/if}

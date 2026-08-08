@@ -16,6 +16,7 @@ message CreateEnvelopeRequest {
   bytes storage_key = 1;
   Envelope envelope = 2;
   bytes captcha_key = 3;
+  string captcha_token = 4;
 }
 
 message CreateEnvelopeResponse {
@@ -50,6 +51,7 @@ message RuntimeConfig {
   // Zero selects a non-expiring envelope by default.
   uint32 default_ttl_seconds = 5;
   uint32 max_url_bytes = 6;
+  bool create_captcha_required = 7;
 }
 
 message SafeBrowsingLookupRequest {

@@ -18,6 +18,7 @@ func TestRunStartsAndShutsDownMemoryExternalMode(t *testing.T) {
 	t.Setenv("SECURL_CORS_ALLOWED_ORIGINS", "https://app.example")
 	t.Setenv("SECURL_SAFE_BROWSING_ENABLED", "false")
 	t.Setenv("SECURL_CAPTCHA_PROVIDER", "none")
+	t.Setenv("SECURL_CREATE_CAPTCHA_REQUIRED", "false")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

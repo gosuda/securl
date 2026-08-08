@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS envelopes (
     CONSTRAINT envelopes_envelope_size CHECK (
         OCTET_LENGTH(envelope) > 0 AND OCTET_LENGTH(envelope) <= 16384
     ),
-    CONSTRAINT envelopes_captcha_key_pair CHECK (
+    CONSTRAINT envelopes_captcha_key_bundle CHECK (
         (OCTET_LENGTH(captcha_key_nonce) = 0 AND OCTET_LENGTH(captcha_key_ciphertext) = 0)
         OR (
             OCTET_LENGTH(captcha_key_nonce) = 12

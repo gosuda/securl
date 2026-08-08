@@ -7,6 +7,15 @@ import {
 } from '../src/lib/gen/securl/v1/api_pb.js';
 import { hashSafeBrowsingUrl } from '../src/lib/safe-browsing/url-hash.js';
 
+declare global {
+  interface Window {
+    __solveCaptcha: () => void;
+    __failCaptcha: () => void;
+    __expireCaptcha: () => void;
+    __captchaRenderCount: number;
+  }
+}
+
 const safeLookupPattern = '**/api/v1/safe-browsing/lookup';
 const turnstileScriptPattern = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
@@ -35,6 +44,7 @@ async function createProtectedLink(
       requestBody = request.postDataBuffer() ?? Buffer.alloc(0);
     }
   });
+  await mockTurnstile(page);
   await page.goto('/');
   await page.getByLabel('Destination URL').fill(destination);
   if (options.password !== undefined) {
@@ -49,15 +59,85 @@ async function createProtectedLink(
   return { link: (await page.locator('code').textContent())!, requestBody };
 }
 
-async function mockTurnstile(page: Page): Promise<void> {
+function turnstileMockScript(autoSolve = true): string {
+  return `window.turnstile={render:function(_,options){window.__captchaRenderCount=(window.__captchaRenderCount||0)+1;window.__solveCaptcha=function(){options.callback('e2e-token')};window.__failCaptcha=function(){options['error-callback']()};window.__expireCaptcha=function(){options['expired-callback']()};${autoSolve ? 'setTimeout(window.__solveCaptcha,0);' : ''}return 'e2e-widget'},remove:function(){}};`;
+}
+
+async function mockTurnstile(page: Page, autoSolve = true): Promise<void> {
   await page.route(turnstileScriptPattern, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/javascript',
-      body: `window.turnstile={render:function(_,options){setTimeout(function(){options.callback('e2e-token')},0);return 'e2e-widget'},remove:function(){}};`
+      body: turnstileMockScript(autoSolve)
     });
   });
 }
+
+test('creator CAPTCHA blocks submission until the challenge is solved', async ({ page }) => {
+  await mockTurnstile(page, false);
+  await page.goto('/');
+  await page.getByLabel('Destination URL').fill('https://example.com/creator-captcha');
+  const createButton = page.getByRole('button', { name: 'Create protected link' });
+  await expect(createButton).toBeDisabled();
+  await page.waitForFunction(() => typeof window.__solveCaptcha === 'function');
+  await page.evaluate(() => window.__solveCaptcha());
+  await expect(createButton).toBeEnabled();
+  await createButton.click();
+  await expect(page.getByRole('heading', { name: 'Protected link ready' })).toBeVisible();
+});
+
+for (const scenario of [
+  { name: 'provider error', trigger: 'error', message: 'Verification failed. Try again.' },
+  { name: 'expiry', trigger: 'expired', message: 'Verification expired. Complete it again.' }
+] as const) {
+  test(`creator CAPTCHA recovers from ${scenario.name}`, async ({ page }) => {
+    await mockTurnstile(page, false);
+    await page.goto('/');
+    await page.getByLabel('Destination URL').fill(`https://example.com/captcha-${scenario.trigger}`);
+    await page.waitForFunction(() => window.__captchaRenderCount === 1);
+    await page.evaluate((trigger) => {
+      if (trigger === 'error') window.__failCaptcha();
+      else window.__expireCaptcha();
+    }, scenario.trigger);
+
+    const createButton = page.getByRole('button', { name: 'Create protected link' });
+    await expect(page.getByRole('alert')).toHaveText(scenario.message);
+    await expect(createButton).toBeDisabled();
+    await page.getByRole('button', { name: 'Try verification again' }).click();
+    await page.waitForFunction(() => window.__captchaRenderCount === 2);
+    await page.evaluate(() => window.__solveCaptcha());
+    await expect(createButton).toBeEnabled();
+    await createButton.click();
+    await expect(page.getByRole('heading', { name: 'Protected link ready' })).toBeVisible();
+  });
+}
+
+test('creator CAPTCHA retries after the provider script fails to load', async ({ page }) => {
+  let scriptRequests = 0;
+  await page.route(turnstileScriptPattern, async (route) => {
+    scriptRequests += 1;
+    if (scriptRequests === 1) {
+      await route.abort('failed');
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript',
+      body: turnstileMockScript(false)
+    });
+  });
+  await page.goto('/');
+  await page.getByLabel('Destination URL').fill('https://example.com/captcha-script-retry');
+  await expect(page.getByRole('alert')).toHaveText('Verification couldn’t load.');
+  const createButton = page.getByRole('button', { name: 'Create protected link' });
+  await expect(createButton).toBeDisabled();
+  await page.getByRole('button', { name: 'Try verification again' }).click();
+  await page.waitForFunction(() => window.__captchaRenderCount === 1);
+  await page.evaluate(() => window.__solveCaptcha());
+  await expect(createButton).toBeEnabled();
+  await createButton.click();
+  await expect(page.getByRole('heading', { name: 'Protected link ready' })).toBeVisible();
+});
 
 test('clean lookup redirects only after the five-second gate and leaks no fragment or plaintext', async ({
   page,
@@ -75,6 +155,7 @@ test('clean lookup redirects only after the five-second gate and leaks no fragme
   const createRequest = fromBinary(CreateEnvelopeRequestSchema, requestBody);
   expect(createRequest.storageKey).toHaveLength(32);
   expect(createRequest.envelope?.ciphertext.length).toBeGreaterThan(16);
+  expect(createRequest.captchaToken).toBe('e2e-token');
 
   const openPage = await context.newPage();
   let scanCompletedAt = 0;
@@ -94,6 +175,22 @@ test('clean lookup redirects only after the five-second gate and leaks no fragme
   await expect(openPage).toHaveURL(destination, { timeout: 3000 });
   expect(destinationRequestedAt - scanCompletedAt).toBeGreaterThanOrEqual(4800);
 });
+
+test('New link leaves the open-link state and returns to the creator', async ({ page, context }) => {
+  const destination = 'https://example.com/new-link-navigation';
+  const password = 'new-link-navigation';
+  const { link } = await createProtectedLink(page, destination, { password });
+  const openPage = await context.newPage();
+
+  await openPage.goto(link);
+  await expect(openPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
+  await openPage.getByRole('link', { name: 'New link' }).click();
+
+  await expect(openPage).toHaveURL('/');
+  await expect(openPage.getByRole('heading', { name: 'Create a protected link' })).toBeVisible();
+  await expect(openPage.getByRole('heading', { name: 'Open a protected link' })).toHaveCount(0);
+});
+
 
 test('forever TTL is encoded as zero and creates a non-expiring link', async ({ page }) => {
   const { requestBody } = await createProtectedLink(page, 'https://example.com/forever', { ttl: 0 });
@@ -193,5 +290,5 @@ test('password, CAPTCHA mock, and burn consume the link exactly once', async ({ 
   );
   await openPage.reload();
   await missingMetadata;
-  await expect(openPage.getByText('Envelope not found.')).toBeVisible();
+  await expect(openPage.getByText('This link is no longer available.')).toBeVisible();
 });

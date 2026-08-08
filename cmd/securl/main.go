@@ -110,16 +110,18 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	runtimeConfig := &securlv1.RuntimeConfig{
-		SafeBrowsingEnabled: applicationConfig.SafeBrowsingEnabled,
-		CaptchaProvider:     applicationConfig.CaptchaProvider,
-		CaptchaSiteKey:      applicationConfig.CaptchaSiteKey,
-		AllowedTtlSeconds:   append([]uint32(nil), applicationConfig.AllowedTTLSeconds...),
-		DefaultTtlSeconds:   uint32(applicationConfig.DefaultTTL / time.Second),
-		MaxUrlBytes:         applicationConfig.MaxURLBytes,
+		SafeBrowsingEnabled:   applicationConfig.SafeBrowsingEnabled,
+		CaptchaProvider:       applicationConfig.CaptchaProvider,
+		CaptchaSiteKey:        applicationConfig.CaptchaSiteKey,
+		AllowedTtlSeconds:     append([]uint32(nil), applicationConfig.AllowedTTLSeconds...),
+		DefaultTtlSeconds:     uint32(applicationConfig.DefaultTTL / time.Second),
+		MaxUrlBytes:           applicationConfig.MaxURLBytes,
+		CreateCaptchaRequired: applicationConfig.CreateCaptchaRequired,
 	}
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Repository:         repository,
 		Access:             access,
+		CaptchaVerifier:    verifier,
 		CaptchaWrapper:     wrapper,
 		SafeBrowsing:       safeBrowsing,
 		RuntimeConfig:      runtimeConfig,

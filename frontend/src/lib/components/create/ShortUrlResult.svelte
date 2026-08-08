@@ -11,5 +11,5 @@
     <code>{url}</code>
     <CopyButton value={url} />
   </div>
-  <p>The secret stays after #. Anyone with the full link can open it.</p>
+  <p>Share the whole link exactly as shown.</p>
 </Panel>

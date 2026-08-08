@@ -21,9 +21,8 @@ func (verify verifierFunc) Verify(ctx context.Context, token string) error {
 
 func TestInvalidCaptchaDoesNotConsumeBurnRecord(t *testing.T) {
 	repository := memory.New()
-	wrapper, err := captcha.NewKeyWrapper(
-		base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x21}, 32)),
-	)
+	wrapKey := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x21}, 32))
+	wrapper, err := captcha.NewKeyWrapper(wrapKey)
 	if err != nil {
 		t.Fatal(err)
 	}

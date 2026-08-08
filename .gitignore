@@ -145,3 +145,6 @@ frontend/playwright-report/
 
 # Local root binary from `go build ./cmd/securl`
 /securl
+.agents
+.hallmark
+skills-lock.json

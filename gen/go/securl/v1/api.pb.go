@@ -75,6 +75,7 @@ type CreateEnvelopeRequest struct {
 	StorageKey    []byte                 `protobuf:"bytes,1,opt,name=storage_key,json=storageKey,proto3" json:"storage_key,omitempty"`
 	Envelope      *Envelope              `protobuf:"bytes,2,opt,name=envelope,proto3" json:"envelope,omitempty"`
 	CaptchaKey    []byte                 `protobuf:"bytes,3,opt,name=captcha_key,json=captchaKey,proto3" json:"captcha_key,omitempty"`
+	CaptchaToken  string                 `protobuf:"bytes,4,opt,name=captcha_token,json=captchaToken,proto3" json:"captcha_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -128,6 +129,13 @@ func (x *CreateEnvelopeRequest) GetCaptchaKey() []byte {
 		return x.CaptchaKey
 	}
 	return nil
+}
+
+func (x *CreateEnvelopeRequest) GetCaptchaToken() string {
+	if x != nil {
+		return x.CaptchaToken
+	}
+	return ""
 }
 
 type CreateEnvelopeResponse struct {
@@ -349,10 +357,11 @@ type RuntimeConfig struct {
 	// Includes zero when non-expiring envelopes are allowed.
 	AllowedTtlSeconds []uint32 `protobuf:"varint,4,rep,packed,name=allowed_ttl_seconds,json=allowedTtlSeconds,proto3" json:"allowed_ttl_seconds,omitempty"`
 	// Zero selects a non-expiring envelope by default.
-	DefaultTtlSeconds uint32 `protobuf:"varint,5,opt,name=default_ttl_seconds,json=defaultTtlSeconds,proto3" json:"default_ttl_seconds,omitempty"`
-	MaxUrlBytes       uint32 `protobuf:"varint,6,opt,name=max_url_bytes,json=maxUrlBytes,proto3" json:"max_url_bytes,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	DefaultTtlSeconds     uint32 `protobuf:"varint,5,opt,name=default_ttl_seconds,json=defaultTtlSeconds,proto3" json:"default_ttl_seconds,omitempty"`
+	MaxUrlBytes           uint32 `protobuf:"varint,6,opt,name=max_url_bytes,json=maxUrlBytes,proto3" json:"max_url_bytes,omitempty"`
+	CreateCaptchaRequired bool   `protobuf:"varint,7,opt,name=create_captcha_required,json=createCaptchaRequired,proto3" json:"create_captcha_required,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *RuntimeConfig) Reset() {
@@ -425,6 +434,13 @@ func (x *RuntimeConfig) GetMaxUrlBytes() uint32 {
 		return x.MaxUrlBytes
 	}
 	return 0
+}
+
+func (x *RuntimeConfig) GetCreateCaptchaRequired() bool {
+	if x != nil {
+		return x.CreateCaptchaRequired
+	}
+	return false
 }
 
 type SafeBrowsingLookupRequest struct {
@@ -647,13 +663,14 @@ var File_securl_v1_api_proto protoreflect.FileDescriptor
 
 const file_securl_v1_api_proto_rawDesc = "" +
 	"\n" +
-	"\x13securl/v1/api.proto\x12\tsecurl.v1\x1a\x18securl/v1/envelope.proto\"\x8a\x01\n" +
+	"\x13securl/v1/api.proto\x12\tsecurl.v1\x1a\x18securl/v1/envelope.proto\"\xaf\x01\n" +
 	"\x15CreateEnvelopeRequest\x12\x1f\n" +
 	"\vstorage_key\x18\x01 \x01(\fR\n" +
 	"storageKey\x12/\n" +
 	"\benvelope\x18\x02 \x01(\v2\x13.securl.v1.EnvelopeR\benvelope\x12\x1f\n" +
 	"\vcaptcha_key\x18\x03 \x01(\fR\n" +
-	"captchaKey\"\\\n" +
+	"captchaKey\x12#\n" +
+	"\rcaptcha_token\x18\x04 \x01(\tR\fcaptchaToken\"\\\n" +
 	"\x16CreateEnvelopeResponse\x12&\n" +
 	"\x0fexpires_at_unix\x18\x01 \x01(\x03R\rexpiresAtUnix\x12\x1a\n" +
 	"\breplayed\x18\x02 \x01(\bR\breplayed\"~\n" +
@@ -666,14 +683,15 @@ const file_securl_v1_api_proto_rawDesc = "" +
 	"\benvelope\x18\x01 \x01(\v2\x13.securl.v1.EnvelopeR\benvelope\x12\x1f\n" +
 	"\vcaptcha_key\x18\x02 \x01(\fR\n" +
 	"captchaKey\x12&\n" +
-	"\x0fexpires_at_unix\x18\x03 \x01(\x03R\rexpiresAtUnix\"\xb8\x02\n" +
+	"\x0fexpires_at_unix\x18\x03 \x01(\x03R\rexpiresAtUnix\"\xf0\x02\n" +
 	"\rRuntimeConfig\x122\n" +
 	"\x15safe_browsing_enabled\x18\x01 \x01(\bR\x13safeBrowsingEnabled\x12E\n" +
 	"\x10captcha_provider\x18\x02 \x01(\x0e2\x1a.securl.v1.CaptchaProviderR\x0fcaptchaProvider\x12(\n" +
 	"\x10captcha_site_key\x18\x03 \x01(\tR\x0ecaptchaSiteKey\x12.\n" +
 	"\x13allowed_ttl_seconds\x18\x04 \x03(\rR\x11allowedTtlSeconds\x12.\n" +
 	"\x13default_ttl_seconds\x18\x05 \x01(\rR\x11defaultTtlSeconds\x12\"\n" +
-	"\rmax_url_bytes\x18\x06 \x01(\rR\vmaxUrlBytes\"@\n" +
+	"\rmax_url_bytes\x18\x06 \x01(\rR\vmaxUrlBytes\x126\n" +
+	"\x17create_captcha_required\x18\a \x01(\bR\x15createCaptchaRequired\"@\n" +
 	"\x19SafeBrowsingLookupRequest\x12#\n" +
 	"\rhash_prefixes\x18\x01 \x03(\fR\fhashPrefixes\"\x99\x01\n" +
 	"\x14SafeBrowsingFullHash\x12\x1b\n" +

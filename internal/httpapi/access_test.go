@@ -78,12 +78,14 @@ func protectedRecord(
 func protectedRouter(
 	repository store.Repository,
 	service *accessservice.Service,
+	verifier captcha.Verifier,
 	wrapper *captcha.KeyWrapper,
 ) http.Handler {
 	return NewRouter(Dependencies{
-		Repository:     repository,
-		Access:         service,
-		CaptchaWrapper: wrapper,
+		Repository:      repository,
+		Access:          service,
+		CaptchaVerifier: verifier,
+		CaptchaWrapper:  wrapper,
 		RuntimeConfig: &securlv1.RuntimeConfig{
 			CaptchaProvider: securlv1.CaptchaProvider_CAPTCHA_PROVIDER_TURNSTILE,
 		},
@@ -106,7 +108,7 @@ func TestBurnAccessConsumesOnlyAfterSuccessfulCaptcha(t *testing.T) {
 		t, repository, wrapper, accessservice.CaptchaFlag|accessservice.BurnAfterReadFlag,
 	)
 	encodedKey := base64.RawURLEncoding.EncodeToString(storageKey[:])
-	router := protectedRouter(repository, service, wrapper)
+	router := protectedRouter(repository, service, verifier, wrapper)
 
 	ordinary := httptest.NewRecorder()
 	router.ServeHTTP(
@@ -162,7 +164,7 @@ func TestBurnWithoutCaptchaAcceptsCanonicalEmptyRequestOnce(t *testing.T) {
 	service := accessservice.NewService(repository, nil, nil)
 	storageKey, _ := protectedRecord(t, repository, nil, accessservice.BurnAfterReadFlag)
 	encodedKey := base64.RawURLEncoding.EncodeToString(storageKey[:])
-	router := protectedRouter(repository, service, nil)
+	router := protectedRouter(repository, service, nil, nil)
 
 	first := postProtobuf(router, "/api/v1/envelopes/"+encodedKey+"/access", nil)
 	if first.Code != http.StatusOK {
@@ -180,7 +182,7 @@ func TestAccessBodyLimitIsFourKiB(t *testing.T) {
 	storageKey, _ := protectedRecord(t, repository, nil, accessservice.BurnAfterReadFlag)
 	encodedKey := base64.RawURLEncoding.EncodeToString(storageKey[:])
 	response := postProtobuf(
-		protectedRouter(repository, service, nil),
+		protectedRouter(repository, service, nil, nil),
 		"/api/v1/envelopes/"+encodedKey+"/access",
 		make([]byte, accessRequestLimit+1),
 	)
@@ -195,7 +197,7 @@ func TestPlainRecordCannotUseAccessEndpoint(t *testing.T) {
 	storageKey, _, _ := storedEnvelope(t, repository, 0)
 	encodedKey := base64.RawURLEncoding.EncodeToString(storageKey[:])
 	response := postProtobuf(
-		protectedRouter(repository, service, nil),
+		protectedRouter(repository, service, nil, nil),
 		"/api/v1/envelopes/"+encodedKey+"/access",
 		nil,
 	)

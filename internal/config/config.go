@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -40,6 +39,7 @@ type Config struct {
 	SafeBrowsingTimeout      time.Duration
 	SafeBrowsingCacheEntries int
 	CaptchaProvider          securlv1.CaptchaProvider
+	CreateCaptchaRequired    bool
 	CaptchaSiteKey           string
 	CaptchaSecretKey         string
 	CaptchaWrapKey           string
@@ -136,6 +136,11 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 	if config.CaptchaProvider, err = parseCaptchaProvider(value("SECURL_CAPTCHA_PROVIDER", "none")); err != nil {
 		return Config{}, err
 	}
+	if config.CreateCaptchaRequired, err = strconv.ParseBool(
+		value("SECURL_CREATE_CAPTCHA_REQUIRED", "false"),
+	); err != nil {
+		return Config{}, fmt.Errorf("SECURL_CREATE_CAPTCHA_REQUIRED: %w", err)
+	}
 	if config.CaptchaAllowedHostnames, err = parseHostnames(
 		value("SECURL_CAPTCHA_ALLOWED_HOSTNAMES", "localhost"),
 	); err != nil {
@@ -145,11 +150,10 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 		if config.CaptchaSiteKey == "" || config.CaptchaSecretKey == "" || config.CaptchaWrapKey == "" {
 			return Config{}, errors.New("CAPTCHA site, secret, and wrap keys are required")
 		}
-		decoded, decodeErr := base64.RawURLEncoding.DecodeString(config.CaptchaWrapKey)
-		if decodeErr != nil || len(decoded) != 32 ||
-			base64.RawURLEncoding.EncodeToString(decoded) != config.CaptchaWrapKey {
-			return Config{}, errors.New("SECURL_CAPTCHA_WRAP_KEY must be a canonical 32-byte base64url key")
-		}
+	}
+	if config.CreateCaptchaRequired &&
+		config.CaptchaProvider == securlv1.CaptchaProvider_CAPTCHA_PROVIDER_NONE {
+		return Config{}, errors.New("SECURL_CAPTCHA_PROVIDER is required when create CAPTCHA is enabled")
 	}
 	if config.EnableHSTS, err = strconv.ParseBool(value("SECURL_ENABLE_HSTS", "false")); err != nil {
 		return Config{}, fmt.Errorf("SECURL_ENABLE_HSTS: %w", err)

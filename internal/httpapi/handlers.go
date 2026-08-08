@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -92,12 +93,18 @@ func (handler *api) createEnvelope(
 	metadata := createRequest.Envelope.Metadata
 	captchaEnabled := metadata.FeatureFlags&uint32(securlv1.FeatureFlag_FEATURE_FLAG_CAPTCHA) != 0
 	if captchaEnabled {
-		if len(createRequest.CaptchaKey) != 32 || handler.dependencies.CaptchaWrapper == nil ||
-			handler.dependencies.Access == nil || handler.dependencies.RuntimeConfig == nil ||
+		if len(createRequest.CaptchaKey) != 32 || handler.dependencies.Access == nil ||
+			handler.dependencies.RuntimeConfig == nil || handler.dependencies.CaptchaVerifier == nil ||
+			handler.dependencies.CaptchaWrapper == nil ||
 			handler.dependencies.RuntimeConfig.CaptchaProvider == securlv1.CaptchaProvider_CAPTCHA_PROVIDER_NONE {
 			writeError(writer, request, http.StatusBadRequest, "feature_unavailable", "CAPTCHA protection is unavailable.")
 			return
 		}
+		defer func() {
+			for index := range createRequest.CaptchaKey {
+				createRequest.CaptchaKey[index] = 0
+			}
+		}()
 	} else if len(createRequest.CaptchaKey) != 0 {
 		writeError(writer, request, http.StatusBadRequest, "invalid_request", "Unexpected CAPTCHA key.")
 		return
@@ -119,26 +126,60 @@ func (handler *api) createEnvelope(
 	requestHasher := sha256.New()
 	_, _ = requestHasher.Write(storageKey[:])
 	_, _ = requestHasher.Write(envelopeBytes)
-	var wrappedNonce, wrappedCiphertext []byte
 	if captchaEnabled {
 		_, _ = requestHasher.Write(createRequest.CaptchaKey)
+	}
+	var requestHash [32]byte
+	copy(requestHash[:], requestHasher.Sum(nil))
+	now := handler.dependencies.Now().UTC()
+	existing, lookupErr := handler.dependencies.Repository.Get(request.Context(), storageKey, time.Unix(0, 0).UTC())
+	if lookupErr == nil {
+		if !bytes.Equal(existing.RequestHash[:], requestHash[:]) {
+			handler.writeStoreError(writer, request, store.ErrConflict)
+			return
+		}
+		writer.Header().Set("Cache-Control", "private, no-store")
+		writeMessage(writer, http.StatusOK, &securlv1.CreateEnvelopeResponse{
+			ExpiresAtUnix: expirationUnix(existing.ExpiresAt), Replayed: true,
+		})
+		return
+	}
+	if !errors.Is(lookupErr, store.ErrNotFound) {
+		handler.writeStoreError(writer, request, lookupErr)
+		return
+	}
+	createCaptchaRequired := handler.dependencies.RuntimeConfig != nil &&
+		handler.dependencies.RuntimeConfig.CreateCaptchaRequired
+	if createCaptchaRequired {
+		if handler.dependencies.CaptchaVerifier == nil ||
+			handler.dependencies.RuntimeConfig.CaptchaProvider == securlv1.CaptchaProvider_CAPTCHA_PROVIDER_NONE {
+			writeError(writer, request, http.StatusBadRequest, "feature_unavailable", "CAPTCHA verification is unavailable.")
+			return
+		}
+		if createRequest.CaptchaToken == "" {
+			writeError(writer, request, http.StatusForbidden, "captcha_required", "CAPTCHA verification is required.")
+			return
+		}
+		if verifyErr := handler.dependencies.CaptchaVerifier.Verify(request.Context(), createRequest.CaptchaToken); verifyErr != nil {
+			handler.writeCaptchaError(writer, request, verifyErr)
+			return
+		}
+	} else if createRequest.CaptchaToken != "" {
+		writeError(writer, request, http.StatusBadRequest, "invalid_request", "Unexpected CAPTCHA token.")
+		return
+	}
+	var wrappedNonce, wrappedCiphertext []byte
+	if captchaEnabled {
 		wrappedNonce, wrappedCiphertext, err = handler.dependencies.CaptchaWrapper.Wrap(
 			storageKey, metadata.ProtocolVersion, createRequest.CaptchaKey,
 		)
-		for index := range createRequest.CaptchaKey {
-			createRequest.CaptchaKey[index] = 0
-		}
 		if err != nil {
 			writeError(writer, request, http.StatusInternalServerError, "internal", "Internal server error.")
 			return
 		}
 	}
-
-	var requestHash [32]byte
-	copy(requestHash[:], requestHasher.Sum(nil))
 	envelopeHash := sha256.Sum256(envelopeBytes)
 	etag := `"` + base64.RawURLEncoding.EncodeToString(envelopeHash[:]) + `"`
-	now := handler.dependencies.Now().UTC()
 	expiresAt := expirationTime(now, metadata.TtlSeconds)
 	result, err := handler.dependencies.Repository.Create(request.Context(), store.CreateInput{
 		StorageKey:           storageKey,
@@ -368,10 +409,8 @@ func (handler *api) writeStoreError(writer http.ResponseWriter, request *http.Re
 	}
 }
 
-func (handler *api) writeAccessError(writer http.ResponseWriter, request *http.Request, err error) {
+func (handler *api) writeCaptchaError(writer http.ResponseWriter, request *http.Request, err error) bool {
 	switch {
-	case errors.Is(err, store.ErrNotFound):
-		writeError(writer, request, http.StatusNotFound, "not_found", "Envelope not found.")
 	case errors.Is(err, captcha.ErrCaptchaFailed):
 		writeError(writer, request, http.StatusForbidden, "captcha_failed", "CAPTCHA verification failed.")
 	case errors.Is(err, captcha.ErrRateLimited):
@@ -381,6 +420,19 @@ func (handler *api) writeAccessError(writer http.ResponseWriter, request *http.R
 		writeError(writer, request, http.StatusServiceUnavailable, "dependency_unavailable", "CAPTCHA verifier is unavailable.")
 	case errors.Is(err, captcha.ErrFeatureUnavailable):
 		writeError(writer, request, http.StatusBadRequest, "feature_unavailable", "CAPTCHA protection is unavailable.")
+	default:
+		return false
+	}
+	return true
+}
+
+func (handler *api) writeAccessError(writer http.ResponseWriter, request *http.Request, err error) {
+	if handler.writeCaptchaError(writer, request, err) {
+		return
+	}
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(writer, request, http.StatusNotFound, "not_found", "Envelope not found.")
 	case errors.Is(err, access.ErrInvalidAccessRecord):
 		writeError(writer, request, http.StatusBadRequest, "invalid_request", "Invalid protected access request.")
 	default:

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
 	"log/slog"
 	"net/http"
@@ -38,11 +40,12 @@ func main() {
 	const origin = "http://127.0.0.1:4179"
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	repository := memory.New()
-	wrapper, err := captcha.NewKeyWrapper("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY")
+	verifier := captchaVerifier{}
+	wrapper, err := captcha.NewKeyWrapper(base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
 	if err != nil {
 		panic(err)
 	}
-	access := accessservice.NewService(repository, captchaVerifier{}, wrapper)
+	access := accessservice.NewService(repository, verifier, wrapper)
 	frontendHandler, err := frontend.NewHandler()
 	if err != nil {
 		panic(err)
@@ -51,17 +54,19 @@ func main() {
 		0: {}, 3600: {}, 86400: {}, 604800: {}, 2592000: {},
 	}
 	router := httpapi.NewRouter(httpapi.Dependencies{
-		Repository:     repository,
-		Access:         access,
-		CaptchaWrapper: wrapper,
-		SafeBrowsing:   cleanLookup{},
+		Repository:      repository,
+		Access:          access,
+		CaptchaVerifier: verifier,
+		CaptchaWrapper:  wrapper,
+		SafeBrowsing:    cleanLookup{},
 		RuntimeConfig: &securlv1.RuntimeConfig{
-			SafeBrowsingEnabled: true,
-			CaptchaProvider:     securlv1.CaptchaProvider_CAPTCHA_PROVIDER_TURNSTILE,
-			CaptchaSiteKey:      "e2e-site-key",
-			AllowedTtlSeconds:   []uint32{3600, 86400, 604800, 2592000, 0},
-			DefaultTtlSeconds:   604800,
-			MaxUrlBytes:         8192,
+			SafeBrowsingEnabled:   true,
+			CaptchaProvider:       securlv1.CaptchaProvider_CAPTCHA_PROVIDER_TURNSTILE,
+			CaptchaSiteKey:        "e2e-site-key",
+			AllowedTtlSeconds:     []uint32{3600, 86400, 604800, 2592000, 0},
+			DefaultTtlSeconds:     604800,
+			MaxUrlBytes:           8192,
+			CreateCaptchaRequired: true,
 		},
 		AllowedTTLs:      allowedTTLs,
 		MaxEnvelopeBytes: 16384,

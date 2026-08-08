@@ -47,11 +47,10 @@ func (repository *Repository) Create(ctx context.Context, input store.CreateInpu
 	if len(input.Metadata) == 0 || len(input.Envelope) == 0 {
 		return store.CreateResult{}, store.ErrInvalid
 	}
-	if (len(input.CaptchaKeyNonce) == 0) != (len(input.CaptchaKeyCiphertext) == 0) {
-		return store.CreateResult{}, store.ErrInvalid
-	}
-	if len(input.CaptchaKeyNonce) != 0 && len(input.CaptchaKeyNonce) != 12 {
-		return store.CreateResult{}, store.ErrInvalid
+	if len(input.CaptchaKeyNonce) != 0 || len(input.CaptchaKeyCiphertext) != 0 {
+		if len(input.CaptchaKeyNonce) != 12 || len(input.CaptchaKeyCiphertext) == 0 {
+			return store.CreateResult{}, store.ErrInvalid
+		}
 	}
 
 	repository.mu.Lock()

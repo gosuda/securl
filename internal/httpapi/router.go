@@ -17,6 +17,7 @@ import (
 type Dependencies struct {
 	Repository         store.Repository
 	Access             *access.Service
+	CaptchaVerifier    captcha.Verifier
 	CaptchaWrapper     *captcha.KeyWrapper
 	SafeBrowsing       safebrowsing.LookupClient
 	RuntimeConfig      *securlv1.RuntimeConfig

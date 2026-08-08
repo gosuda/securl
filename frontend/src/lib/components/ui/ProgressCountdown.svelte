@@ -13,7 +13,7 @@
     aria-valuenow={elapsed}
     aria-label="Safety delay"
   >
-    <span style={`width: ${(elapsed / total) * 100}%`}></span>
+    <span style={`--progress: ${elapsed / total}`}></span>
   </div>
   <p aria-live="polite">{remaining > 0 ? `${remaining} seconds remaining` : 'Safety delay complete'}</p>
 </div>

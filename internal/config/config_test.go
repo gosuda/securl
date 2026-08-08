@@ -2,7 +2,6 @@ package config
 
 import (
 	"encoding/base64"
-	"strings"
 	"testing"
 )
 
@@ -97,6 +96,7 @@ func TestConfigurationRequiresEnabledDependencies(t *testing.T) {
 		{"SECURL_STORE_BACKEND": "mariadb"},
 		{"SECURL_FRONTEND_MODE": "external"},
 		{"SECURL_CAPTCHA_PROVIDER": "turnstile"},
+		{"SECURL_CREATE_CAPTCHA_REQUIRED": "true"},
 		{"SECURL_DEFAULT_TTL": "2h"},
 	}
 	for _, values := range tests {
@@ -124,7 +124,7 @@ func TestDatabaseBackendConfiguration(t *testing.T) {
 }
 
 func TestConfiguredCaptchaAndExternalFrontend(t *testing.T) {
-	wrapKey := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
+	wrapKey := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
 	config, err := parseConfig(mapLookup(map[string]string{
 		"SECURL_FRONTEND_MODE":             "external",
 		"SECURL_CORS_ALLOWED_ORIGINS":      "https://app.example,https://앱.example",
@@ -133,11 +133,13 @@ func TestConfiguredCaptchaAndExternalFrontend(t *testing.T) {
 		"SECURL_CAPTCHA_SECRET_KEY":        "secret",
 		"SECURL_CAPTCHA_WRAP_KEY":          wrapKey,
 		"SECURL_CAPTCHA_ALLOWED_HOSTNAMES": "BÜCHER.example.,localhost",
+		"SECURL_CREATE_CAPTCHA_REQUIRED":   "true",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(config.CORSOrigins) != 2 || config.CaptchaAllowedHostnames[0] != "xn--bcher-kva.example" {
+	if len(config.CORSOrigins) != 2 || config.CaptchaAllowedHostnames[0] != "xn--bcher-kva.example" ||
+		!config.CreateCaptchaRequired {
 		t.Fatalf("config=%+v", config)
 	}
 }

@@ -4,12 +4,39 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/encoding/protowire"
 )
+
+func appendBytesField(message []byte, number protowire.Number, value []byte) []byte {
+	message = protowire.AppendTag(message, number, protowire.BytesType)
+	return protowire.AppendBytes(message, value)
+}
+
+func appendVarintField(message []byte, number protowire.Number, value uint64) []byte {
+	message = protowire.AppendTag(message, number, protowire.VarintType)
+	return protowire.AppendVarint(message, value)
+}
+
+func searchHashesResponse(fullHash [32]byte, seconds uint64, nanos uint64) []byte {
+	detail := appendVarintField(nil, 1, 1)
+	detail = appendBytesField(detail, 2, protowire.AppendVarint(nil, 2))
+	hash := appendBytesField(nil, 1, fullHash[:])
+	hash = appendBytesField(hash, 2, detail)
+	duration := appendVarintField(nil, 1, seconds)
+	duration = appendVarintField(duration, 2, nanos)
+	response := appendBytesField(nil, 1, hash)
+	return appendBytesField(response, 2, duration)
+}
+
+func invalidDurationResponse() []byte {
+	duration := appendVarintField(nil, 1, ^uint64(0))
+	return appendBytesField(nil, 2, duration)
+}
 
 func TestClientUsesPrivatePrefixOnlyGETAndParsesDetails(t *testing.T) {
 	var fullHash [32]byte
@@ -23,15 +50,16 @@ func TestClientUsesPrivatePrefixOnlyGETAndParsesDetails(t *testing.T) {
 		if request.URL.Query().Get("key") != "api-key" {
 			t.Errorf("missing API key")
 		}
-		prefixes := request.URL.Query()["hashPrefixes[]"]
+		query := request.URL.Query()
+		if _, ok := query["hashPrefixes[]"]; ok {
+			t.Errorf("legacy bracketed hash prefix parameter was sent: %v", query)
+		}
+		prefixes := query["hashPrefixes"]
 		if len(prefixes) != 1 || prefixes[0] != base64.StdEncoding.EncodeToString([]byte{1, 2, 3, 4}) {
 			t.Errorf("prefixes=%v", prefixes)
 		}
-		fmt.Fprintf(
-			writer,
-			`{"fullHashes":[{"fullHash":%q,"fullHashDetails":[{"threatType":"MALWARE","attributes":["FRAME_ONLY"]}]}],"cacheDuration":"3.5s"}`,
-			base64.StdEncoding.EncodeToString(fullHash[:]),
-		)
+		writer.Header().Set("Content-Type", "application/x-protobuf")
+		_, _ = writer.Write(searchHashesResponse(fullHash, 3, 500_000_000))
 	}))
 	defer server.Close()
 
@@ -67,7 +95,8 @@ func TestClientFailsClosedOnProviderErrors(t *testing.T) {
 		{
 			name: "invalid duration",
 			handler: func(writer http.ResponseWriter, _ *http.Request) {
-				fmt.Fprint(writer, `{"fullHashes":[],"cacheDuration":"bad"}`)
+				writer.Header().Set("Content-Type", "application/x-protobuf")
+				_, _ = writer.Write(invalidDurationResponse())
 			},
 			timeout: time.Second,
 		},
@@ -75,7 +104,8 @@ func TestClientFailsClosedOnProviderErrors(t *testing.T) {
 			name: "timeout",
 			handler: func(writer http.ResponseWriter, _ *http.Request) {
 				time.Sleep(50 * time.Millisecond)
-				fmt.Fprint(writer, `{"fullHashes":[],"cacheDuration":"60s"}`)
+				writer.Header().Set("Content-Type", "application/x-protobuf")
+				_, _ = writer.Write(searchHashesResponse([32]byte{}, 60, 0))
 			},
 			timeout: 5 * time.Millisecond,
 		},

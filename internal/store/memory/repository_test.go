@@ -42,7 +42,7 @@ func TestCopiesStoredAndReturnedBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if record.Metadata[0] != 1 || record.Envelope[0] != 4 {
-		t.Fatalf("stored bytes were mutated: metadata=%v envelope=%v", record.Metadata, record.Envelope)
+		t.Fatalf("stored bytes were mutated: %+v", record)
 	}
 	record.Metadata[0] = 88
 	record.Envelope[0] = 88
@@ -51,7 +51,7 @@ func TestCopiesStoredAndReturnedBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if again.Metadata[0] != 1 || again.Envelope[0] != 4 {
-		t.Fatalf("returned bytes alias storage: metadata=%v envelope=%v", again.Metadata, again.Envelope)
+		t.Fatalf("returned bytes alias storage: %+v", again)
 	}
 }
 
