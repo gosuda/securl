@@ -30,9 +30,9 @@ func protectedRecord(
 	repository store.Repository,
 	wrapper *captcha.KeyWrapper,
 	flags uint32,
-) ([32]byte, []byte) {
+) ([16]byte, []byte) {
 	t.Helper()
-	var storageKey [32]byte
+	var storageKey [16]byte
 	storageKey[0] = byte(flags + 20)
 	metadata := &securlv1.EnvelopeMetadata{
 		ProtocolVersion: 2,

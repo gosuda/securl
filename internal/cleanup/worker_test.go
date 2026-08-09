@@ -16,7 +16,7 @@ func TestWorkerDeletesOnlyExpiredBatch(t *testing.T) {
 	repository := memory.New()
 	now := time.Unix(5000, 0).UTC()
 	for index, expiresAt := range []time.Time{now.Add(-time.Hour), now, now.Add(time.Hour)} {
-		var storageKey [32]byte
+		var storageKey [16]byte
 		storageKey[0] = byte(index + 1)
 		var requestHash [32]byte
 		requestHash[0] = byte(index + 1)
@@ -41,12 +41,12 @@ func TestWorkerDeletesOnlyExpiredBatch(t *testing.T) {
 		t.Fatalf("second sweep: deleted=%d err=%v", deleted, err)
 	}
 
-	var liveKey [32]byte
+	var liveKey [16]byte
 	liveKey[0] = 3
 	if _, err := repository.Get(context.Background(), liveKey, now); err != nil {
 		t.Fatalf("live record removed: %v", err)
 	}
-	var expiredKey [32]byte
+	var expiredKey [16]byte
 	expiredKey[0] = 2
 	if _, err := repository.Get(context.Background(), expiredKey, now); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expired record remained readable: %v", err)

@@ -149,7 +149,7 @@ func TestCleanupExpiredDeletesAllBatchesAndClosesRepository(t *testing.T) {
 	for index, expiresAt := range []time.Time{
 		now.Add(-3 * time.Hour), now.Add(-2 * time.Hour), now.Add(-time.Hour), now.Add(time.Hour),
 	} {
-		var storageKey [32]byte
+		var storageKey [16]byte
 		storageKey[0] = byte(index + 1)
 		var requestHash [32]byte
 		requestHash[0] = byte(index + 1)
@@ -179,7 +179,7 @@ func TestCleanupExpiredDeletesAllBatchesAndClosesRepository(t *testing.T) {
 	if remaining, err := repository.DeleteExpired(context.Background(), now, 10); err != nil || remaining != 0 {
 		t.Fatalf("remaining=%d err=%v", remaining, err)
 	}
-	var liveKey [32]byte
+	var liveKey [16]byte
 	liveKey[0] = 4
 	if _, err := repository.Get(context.Background(), liveKey, now); err != nil {
 		t.Fatalf("live record removed: %v", err)

@@ -22,7 +22,7 @@ func testRouter() http.Handler {
 
 func TestRouterRegistersOnlyDocumentedRoutes(t *testing.T) {
 	router := testRouter()
-	storageKey := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	storageKey := base64.RawURLEncoding.EncodeToString(make([]byte, 16))
 	tests := []struct {
 		method string
 		path   string

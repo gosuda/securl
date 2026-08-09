@@ -13,7 +13,7 @@ var (
 )
 
 type CreateInput struct {
-	StorageKey           [32]byte
+	StorageKey           [16]byte
 	Metadata             []byte
 	Envelope             []byte
 	RequestHash          [32]byte
@@ -48,9 +48,9 @@ type Record struct {
 
 type Repository interface {
 	Create(context.Context, CreateInput) (CreateResult, error)
-	GetMetadata(context.Context, [32]byte, time.Time) (MetadataRecord, error)
-	Get(context.Context, [32]byte, time.Time) (Record, error)
-	Consume(context.Context, [32]byte, time.Time) (Record, error)
+	GetMetadata(context.Context, [16]byte, time.Time) (MetadataRecord, error)
+	Get(context.Context, [16]byte, time.Time) (Record, error)
+	Consume(context.Context, [16]byte, time.Time) (Record, error)
 	DeleteExpired(context.Context, time.Time, int32) (int64, error)
 	Ping(context.Context) error
 	Close()

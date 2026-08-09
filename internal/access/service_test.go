@@ -26,7 +26,7 @@ func TestInvalidCaptchaDoesNotConsumeBurnRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var storageKey [32]byte
+	var storageKey [16]byte
 	storageKey[0] = 7
 	captchaKey := bytes.Repeat([]byte{0x31}, 32)
 	nonce, ciphertext, err := wrapper.Wrap(storageKey, 2, captchaKey)
@@ -81,7 +81,7 @@ func TestInvalidCaptchaDoesNotConsumeBurnRecord(t *testing.T) {
 
 func TestBurnWithoutCaptchaConsumesImmediately(t *testing.T) {
 	repository := memory.New()
-	var storageKey [32]byte
+	var storageKey [16]byte
 	storageKey[0] = 8
 	now := time.Unix(7000, 0).UTC()
 	_, err := repository.Create(context.Background(), store.CreateInput{

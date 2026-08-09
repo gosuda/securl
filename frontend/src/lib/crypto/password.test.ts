@@ -2,11 +2,11 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { describe, expect, it, vi } from 'vitest';
 import { derivePasswordKey } from './password';
 import { derivePasswordKeyDirect } from './password-derivation';
-import { ARGON2ID_V1 } from './password-profile';
+import { ARGON2D_V1 } from './password-profile';
 
-describe('ARGON2ID_V1 password derivation', () => {
+describe('ARGON2D_V1 password derivation', () => {
   it('matches the fixed vector without Worker or WebAssembly support', async () => {
-    expect(ARGON2ID_V1).toEqual({ version: 0x13, m: 65536, t: 3, p: 1, dkLen: 32 });
+    expect(ARGON2D_V1).toEqual({ version: 0x13, m: 16384, t: 1, p: 1, dkLen: 32 });
     vi.stubGlobal('Worker', undefined);
     vi.stubGlobal('WebAssembly', undefined);
     try {
@@ -15,7 +15,7 @@ describe('ARGON2ID_V1 password derivation', () => {
         new Uint8Array(Array.from({ length: 16 }, (_, index) => index))
       );
       expect(bytesToHex(key)).toBe(
-        'def6fd068289b9a0cf1114f8e978a2c4dab6faef377d895b9c2d59fc93fc5653'
+        'b1dab073f1369bdbd26aad51729835d26d60e553f2f6b1dc1710265a9ac53ae5'
       );
       key.fill(0);
     } finally {

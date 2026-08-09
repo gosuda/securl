@@ -32,7 +32,7 @@ func testRepository(t testing.TB) *Repository {
 }
 
 func createInput(keyByte, hashByte byte, expiresAt time.Time) store.CreateInput {
-	var storageKey [32]byte
+	var storageKey [16]byte
 	storageKey[0] = keyByte
 	var requestHash [32]byte
 	requestHash[0] = hashByte

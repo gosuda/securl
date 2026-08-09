@@ -20,7 +20,7 @@ import (
 func validCreateBody(t testing.TB) []byte {
 	t.Helper()
 	body, err := (&securlv1.CreateEnvelopeRequest{
-		StorageKey: make([]byte, 32),
+		StorageKey: make([]byte, 16),
 		Envelope: &securlv1.Envelope{
 			Metadata: &securlv1.EnvelopeMetadata{
 				ProtocolVersion: 2,
@@ -104,7 +104,7 @@ func TestCreateRequiresVerifiedCaptchaAndReplaysWithoutReverification(t *testing
 	if invalid.Code != http.StatusForbidden {
 		t.Fatalf("invalid token status=%d body=%x", invalid.Code, invalid.Body.Bytes())
 	}
-	var storageKey [32]byte
+	var storageKey [16]byte
 	if _, err := repository.Get(context.Background(), storageKey, time.Unix(0, 0)); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("unsolved create stored record: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestCreateEnvelopeSizeBoundaryUsesDefaultLimit(t *testing.T) {
 		t.Fatalf("exact envelope size=%d", len(exactEnvelopeBytes))
 	}
 	exactBody, err := (&securlv1.CreateEnvelopeRequest{
-		StorageKey: make([]byte, 32),
+		StorageKey: make([]byte, 16),
 		Envelope:   exactEnvelope,
 	}).MarshalVTStrict()
 	if err != nil {
@@ -202,7 +202,7 @@ func TestCreateEnvelopeSizeBoundaryUsesDefaultLimit(t *testing.T) {
 		t.Fatalf("over envelope size=%d", len(overEnvelopeBytes))
 	}
 	overBody, err := (&securlv1.CreateEnvelopeRequest{
-		StorageKey: make([]byte, 32),
+		StorageKey: make([]byte, 16),
 		Envelope:   overEnvelope,
 	}).MarshalVTStrict()
 	if err != nil {
@@ -225,7 +225,7 @@ func TestCreateAllowsUnlimitedTTLWithoutExpiration(t *testing.T) {
 		Now:         func() time.Time { return time.Unix(10000, 0).UTC() },
 	})
 	body, err := (&securlv1.CreateEnvelopeRequest{
-		StorageKey: make([]byte, 32),
+		StorageKey: make([]byte, 16),
 		Envelope: &securlv1.Envelope{
 			Metadata: &securlv1.EnvelopeMetadata{
 				ProtocolVersion: 2, TtlSeconds: 0, PayloadNonce: bytes.Repeat([]byte{1}, 24),
@@ -244,7 +244,7 @@ func TestCreateAllowsUnlimitedTTLWithoutExpiration(t *testing.T) {
 	if err := decodeCanonical(response.Body.Bytes(), &created); err != nil || created.ExpiresAtUnix != 0 {
 		t.Fatalf("created=%+v err=%v", &created, err)
 	}
-	var storageKey [32]byte
+	var storageKey [16]byte
 	if _, err := repository.Get(context.Background(), storageKey, time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("unlimited envelope missing: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestCreateValidatesFlagsTTLAndLayerMetadata(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			body, err := (&securlv1.CreateEnvelopeRequest{
-				StorageKey: make([]byte, 32),
+				StorageKey: make([]byte, 16),
 				Envelope:   &securlv1.Envelope{Metadata: test.metadata, Ciphertext: []byte{1}},
 			}).MarshalVTStrict()
 			if err != nil {
@@ -317,7 +317,7 @@ type countingRepository struct {
 
 func (repository *countingRepository) Get(
 	ctx context.Context,
-	key [32]byte,
+	key [16]byte,
 	now time.Time,
 ) (store.Record, error) {
 	repository.getCalls++
@@ -327,7 +327,7 @@ func (repository *countingRepository) Get(
 func TestInvalidStorageKeyNeverReachesRepository(t *testing.T) {
 	repository := &countingRepository{Repository: memory.New()}
 	router := validationRouter(repository)
-	for _, key := range []string{"short", base64.RawURLEncoding.EncodeToString(make([]byte, 31)), strings.Repeat("z", 43)} {
+	for _, key := range []string{"short", base64.RawURLEncoding.EncodeToString(make([]byte, 15)), strings.Repeat("z", 22)} {
 		request := httptest.NewRequest(http.MethodGet, "/api/v1/envelopes/"+key, nil)
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)

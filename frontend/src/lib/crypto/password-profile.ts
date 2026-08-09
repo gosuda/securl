@@ -1,7 +1,7 @@
-export const ARGON2ID_V1 = Object.freeze({
+export const ARGON2D_V1 = Object.freeze({
   version: 0x13,
-  m: 65536,
-  t: 3,
+  m: 16384,
+  t: 1,
   p: 1,
   dkLen: 32
 });

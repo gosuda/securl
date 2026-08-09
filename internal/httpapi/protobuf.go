@@ -151,9 +151,9 @@ func writeError(
 	_, _ = writer.Write(body)
 }
 
-func parseStorageKey(encoded string) ([32]byte, bool) {
-	var storageKey [32]byte
-	if len(encoded) != 43 || strings.Contains(encoded, "=") {
+func parseStorageKey(encoded string) ([16]byte, bool) {
+	var storageKey [16]byte
+	if len(encoded) != 22 || strings.Contains(encoded, "=") {
 		return storageKey, false
 	}
 	decoded, err := base64.RawURLEncoding.DecodeString(encoded)

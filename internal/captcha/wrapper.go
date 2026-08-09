@@ -40,15 +40,15 @@ func NewKeyWrapper(encodedKey string) (*KeyWrapper, error) {
 	return &KeyWrapper{aead: aead}, nil
 }
 
-func wrapAAD(storageKey [32]byte, protocolVersion uint32) []byte {
-	aad := make([]byte, 36)
+func wrapAAD(storageKey [16]byte, protocolVersion uint32) []byte {
+	aad := make([]byte, 20)
 	copy(aad, storageKey[:])
-	binary.BigEndian.PutUint32(aad[32:], protocolVersion)
+	binary.BigEndian.PutUint32(aad[16:], protocolVersion)
 	return aad
 }
 
 func (wrapper *KeyWrapper) Wrap(
-	storageKey [32]byte,
+	storageKey [16]byte,
 	protocolVersion uint32,
 	captchaKey []byte,
 ) ([]byte, []byte, error) {
@@ -64,7 +64,7 @@ func (wrapper *KeyWrapper) Wrap(
 }
 
 func (wrapper *KeyWrapper) Unwrap(
-	storageKey [32]byte,
+	storageKey [16]byte,
 	protocolVersion uint32,
 	nonce []byte,
 	ciphertext []byte,

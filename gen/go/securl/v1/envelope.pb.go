@@ -25,18 +25,18 @@ type PasswordProfile int32
 
 const (
 	PasswordProfile_PASSWORD_PROFILE_UNSPECIFIED PasswordProfile = 0
-	PasswordProfile_PASSWORD_PROFILE_ARGON2ID_V1 PasswordProfile = 1
+	PasswordProfile_PASSWORD_PROFILE_ARGON2D_V1  PasswordProfile = 1
 )
 
 // Enum value maps for PasswordProfile.
 var (
 	PasswordProfile_name = map[int32]string{
 		0: "PASSWORD_PROFILE_UNSPECIFIED",
-		1: "PASSWORD_PROFILE_ARGON2ID_V1",
+		1: "PASSWORD_PROFILE_ARGON2D_V1",
 	}
 	PasswordProfile_value = map[string]int32{
 		"PASSWORD_PROFILE_UNSPECIFIED": 0,
-		"PASSWORD_PROFILE_ARGON2ID_V1": 1,
+		"PASSWORD_PROFILE_ARGON2D_V1":  1,
 	}
 )
 
@@ -429,10 +429,10 @@ const file_securl_v1_envelope_proto_rawDesc = "" +
 	"ciphertext\x18\x02 \x01(\fR\n" +
 	"ciphertext\"\x1b\n" +
 	"\aPayload\x12\x10\n" +
-	"\x03url\x18\x01 \x01(\tR\x03url*U\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url*T\n" +
 	"\x0fPasswordProfile\x12 \n" +
-	"\x1cPASSWORD_PROFILE_UNSPECIFIED\x10\x00\x12 \n" +
-	"\x1cPASSWORD_PROFILE_ARGON2ID_V1\x10\x01*\x82\x01\n" +
+	"\x1cPASSWORD_PROFILE_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bPASSWORD_PROFILE_ARGON2D_V1\x10\x01*\x82\x01\n" +
 	"\vFeatureFlag\x12\x1c\n" +
 	"\x18FEATURE_FLAG_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14FEATURE_FLAG_CAPTCHA\x10\x01\x12\x19\n" +

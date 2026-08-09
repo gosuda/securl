@@ -62,7 +62,7 @@ func validateMetadata(metadata *securlv1.EnvelopeMetadata, allowedTTLs map[uint3
 	}
 	if metadata.Password != nil &&
 		(len(metadata.Password.Salt) != 16 || len(metadata.Password.Nonce) != 24 ||
-			metadata.Password.Profile != securlv1.PasswordProfile_PASSWORD_PROFILE_ARGON2ID_V1) {
+			metadata.Password.Profile != securlv1.PasswordProfile_PASSWORD_PROFILE_ARGON2D_V1) {
 		return store.ErrInvalid
 	}
 	captchaEnabled := metadata.FeatureFlags&uint32(securlv1.FeatureFlag_FEATURE_FLAG_CAPTCHA) != 0
@@ -85,7 +85,7 @@ func (handler *api) createEnvelope(
 		writeError(writer, request, requestErr.status, requestErr.code, requestErr.message)
 		return
 	}
-	if len(createRequest.StorageKey) != 32 || createRequest.Envelope == nil ||
+	if len(createRequest.StorageKey) != 16 || createRequest.Envelope == nil ||
 		validateMetadata(createRequest.Envelope.Metadata, handler.dependencies.AllowedTTLs) != nil {
 		writeError(writer, request, http.StatusBadRequest, "invalid_request", "Invalid envelope request.")
 		return
@@ -121,7 +121,7 @@ func (handler *api) createEnvelope(
 		writeError(writer, request, http.StatusBadRequest, "invalid_request", "Invalid envelope metadata.")
 		return
 	}
-	var storageKey [32]byte
+	var storageKey [16]byte
 	copy(storageKey[:], createRequest.StorageKey)
 	requestHasher := sha256.New()
 	_, _ = requestHasher.Write(storageKey[:])

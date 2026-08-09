@@ -26,6 +26,7 @@ const KNOWN_FEATURE_FLAGS =
 export const PROTOCOL_VERSION = 2;
 
 export const KEY_LENGTH = 32;
+export const STORAGE_KEY_LENGTH = 16;
 export const PAYLOAD_NONCE_LENGTH = 24;
 export const PASSWORD_SALT_LENGTH = 16;
 const URL_PADDING_ALIGNMENT = 32;
@@ -140,7 +141,7 @@ export function deriveLinkKeys(rootKey: Uint8Array, serviceDomain: string): Link
   const storageSalt = new Uint8Array(STORAGE_KEY_SALT_PREFIX.length + domainBytes.length);
   storageSalt.set(STORAGE_KEY_SALT_PREFIX);
   storageSalt.set(domainBytes, STORAGE_KEY_SALT_PREFIX.length);
-  const storageKey = hkdf(sha3_256, rootKey, storageSalt, EMPTY_INFO, KEY_LENGTH);
+  const storageKey = hkdf(sha3_256, rootKey, storageSalt, EMPTY_INFO, STORAGE_KEY_LENGTH);
   storageSalt.fill(0);
   const encryptionKeyMaterial = hkdf(
     sha3_256,
@@ -170,7 +171,9 @@ export function deriveFinalKey(
 }
 
 export function encodeStorageKey(storageKey: Uint8Array): string {
-  requireKey(storageKey, 'Storage key');
+  if (storageKey.length !== STORAGE_KEY_LENGTH) {
+    throw new Error('Storage key must be exactly 16 bytes.');
+  }
   let binary = '';
   for (const byte of storageKey) {
     binary += String.fromCharCode(byte);
@@ -200,7 +203,7 @@ export function validateEnvelopeMetadata(metadata: EnvelopeMetadata): void {
     metadata.password &&
     (metadata.password.salt.length !== PASSWORD_SALT_LENGTH ||
       metadata.password.nonce.length !== PAYLOAD_NONCE_LENGTH ||
-      metadata.password.profile !== PasswordProfile.ARGON2ID_V1)
+      metadata.password.profile !== PasswordProfile.ARGON2D_V1)
   ) {
     throw new Error('Invalid password layer metadata.');
   }
@@ -287,7 +290,7 @@ export function encryptEnvelope(
       ? create(PasswordLayerSchema, {
           salt: options.password.salt.slice(),
           nonce: passwordNonce,
-          profile: PasswordProfile.ARGON2ID_V1
+          profile: PasswordProfile.ARGON2D_V1
         })
       : undefined,
     captcha: options.captchaKey

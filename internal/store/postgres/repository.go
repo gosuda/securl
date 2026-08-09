@@ -150,7 +150,7 @@ func (repository *Repository) Create(
 
 func (repository *Repository) GetMetadata(
 	ctx context.Context,
-	storageKey [32]byte,
+	storageKey [16]byte,
 	now time.Time,
 ) (store.MetadataRecord, error) {
 	row, err := repository.queries.GetEnvelopeMetadataByKey(ctx, dbgen.GetEnvelopeMetadataByKeyParams{
@@ -175,7 +175,7 @@ func (repository *Repository) GetMetadata(
 
 func (repository *Repository) Get(
 	ctx context.Context,
-	storageKey [32]byte,
+	storageKey [16]byte,
 	now time.Time,
 ) (store.Record, error) {
 	row, err := repository.queries.GetEnvelopeByKey(ctx, dbgen.GetEnvelopeByKeyParams{
@@ -193,7 +193,7 @@ func (repository *Repository) Get(
 
 func (repository *Repository) Consume(
 	ctx context.Context,
-	storageKey [32]byte,
+	storageKey [16]byte,
 	now time.Time,
 ) (store.Record, error) {
 	row, err := repository.queries.ConsumeEnvelope(ctx, dbgen.ConsumeEnvelopeParams{

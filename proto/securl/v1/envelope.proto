@@ -6,7 +6,7 @@ option go_package = "securl.click/securl/gen/go/securl/v1;securlv1";
 
 enum PasswordProfile {
   PASSWORD_PROFILE_UNSPECIFIED = 0;
-  PASSWORD_PROFILE_ARGON2ID_V1 = 1;
+  PASSWORD_PROFILE_ARGON2D_V1 = 1;
 }
 
 enum FeatureFlag {

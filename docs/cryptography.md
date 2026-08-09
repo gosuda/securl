@@ -6,7 +6,7 @@ SecURL protocol version 2 keeps the destination encrypted in the browser. The se
 
 The browser generates an eight-byte random ID and encodes it as an 11-character Base62 fragment. The normalized service domain is lowercase, IDNA-canonical, and has trailing dots removed.
 
-The Argon2id salt is the first 16 bytes of:
+The Argon2d salt is the first 16 bytes of:
 
 ```text
 SHA3-256("v2-root-key\0" || normalized_service_domain)
@@ -15,16 +15,16 @@ SHA3-256("v2-root-key\0" || normalized_service_domain)
 The root key is derived with this fixed profile:
 
 ```text
-Argon2id v1.3
+Argon2d v1.3
 password = id_bytes
 salt     = root_key_salt
-m        = 32768 KiB
-t        = 2
+m        = 16384 KiB
+t        = 1
 p        = 1
 output   = 32 bytes
 ```
 
-The domain and protocol context prevent generic precomputed tables from being reused across domains or protocol namespaces. The mapping remains deterministic within one domain, so a domain-specific exhaustive search is still possible in principle; Argon2id makes each candidate memory-hard rather than increasing the 64-bit ID entropy.
+The domain and protocol context prevent generic precomputed tables from being reused across domains or protocol namespaces. The mapping remains deterministic within one domain, so a domain-specific exhaustive search is still possible in principle; Argon2d makes each candidate memory-hard rather than increasing the 64-bit ID entropy.
 
 ## Storage and encryption subkeys
 
@@ -35,7 +35,7 @@ storage_key = HKDF-SHA3-256(
   IKM  = root_key,
   salt = "v2-storage-key\0" || normalized_service_domain,
   info = empty,
-  L    = 32
+  L    = 16
 )
 
 encryption_key_material = HKDF-SHA3-256(
@@ -46,7 +46,7 @@ encryption_key_material = HKDF-SHA3-256(
 )
 ```
 
-The storage key is Base64URL-encoded without padding for API lookup. The server never needs the fragment ID or root key.
+The 16-byte storage key is Base64URL-encoded without padding for API lookup. The server never needs the fragment ID or root key.
 
 Each envelope has a random 24-byte payload nonce. The final payload key is:
 
@@ -83,11 +83,11 @@ The authenticated metadata contains protocol version 2, feature flags, TTL, the 
 
 ## Password layer
 
-Password protection uses a random 16-byte salt and Argon2id v1.3:
+Password protection uses a random 16-byte salt and Argon2d v1.3:
 
 ```text
-m = 65536 KiB
-t = 3
+m = 16384 KiB
+t = 1
 p = 1
 output = 32 bytes
 ```
@@ -117,7 +117,7 @@ CAPTCHA is an access-control layer, not a confidentiality boundary against the s
 The browser performs the inverse operations:
 
 1. Decode the 64-bit fragment ID.
-2. Derive the Argon2id root key and HKDF subkeys.
+2. Derive the Argon2d root key and HKDF subkeys.
 3. Fetch and validate protocol version 2 metadata.
 4. Obtain the CAPTCHA key when required.
 5. Derive the password key when required.

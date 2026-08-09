@@ -33,7 +33,7 @@ func NewService(repository store.Repository, verifier captcha.Verifier, wrapper 
 
 func (service *Service) Access(
 	ctx context.Context,
-	storageKey [32]byte,
+	storageKey [16]byte,
 	now time.Time,
 	captchaToken string,
 ) (Result, error) {

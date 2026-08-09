@@ -12,13 +12,13 @@ import (
 
 type Repository struct {
 	mu      sync.Mutex
-	records map[[32]byte]store.Record
+	records map[[16]byte]store.Record
 }
 
 var _ store.Repository = (*Repository)(nil)
 
 func New() *Repository {
-	return &Repository{records: make(map[[32]byte]store.Record)}
+	return &Repository{records: make(map[[16]byte]store.Record)}
 }
 
 func cloneBytes(input []byte) []byte {
@@ -77,7 +77,7 @@ func (repository *Repository) Create(ctx context.Context, input store.CreateInpu
 
 func (repository *Repository) GetMetadata(
 	ctx context.Context,
-	storageKey [32]byte,
+	storageKey [16]byte,
 	now time.Time,
 ) (store.MetadataRecord, error) {
 	if err := ctx.Err(); err != nil {
@@ -98,7 +98,7 @@ func (repository *Repository) GetMetadata(
 
 func (repository *Repository) Get(
 	ctx context.Context,
-	storageKey [32]byte,
+	storageKey [16]byte,
 	now time.Time,
 ) (store.Record, error) {
 	if err := ctx.Err(); err != nil {
@@ -115,7 +115,7 @@ func (repository *Repository) Get(
 
 func (repository *Repository) Consume(
 	ctx context.Context,
-	storageKey [32]byte,
+	storageKey [16]byte,
 	now time.Time,
 ) (store.Record, error) {
 	if err := ctx.Err(); err != nil {
@@ -143,7 +143,7 @@ func (repository *Repository) DeleteExpired(
 		return 0, store.ErrInvalid
 	}
 	type expiredRecord struct {
-		key       [32]byte
+		key       [16]byte
 		expiresAt time.Time
 	}
 

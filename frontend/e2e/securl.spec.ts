@@ -153,7 +153,7 @@ test('clean lookup runs in the final second and redirects immediately without le
   expect(requestBody.includes(Buffer.from(destination))).toBe(false);
   expect(requestBody.includes(Buffer.from(destinationInput))).toBe(false);
   const createRequest = fromBinary(CreateEnvelopeRequestSchema, requestBody);
-  expect(createRequest.storageKey).toHaveLength(32);
+  expect(createRequest.storageKey).toHaveLength(16);
   expect(createRequest.envelope?.ciphertext.length).toBeGreaterThan(16);
   expect(createRequest.captchaToken).toBe('e2e-token');
 

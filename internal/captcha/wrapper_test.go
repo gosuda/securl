@@ -13,7 +13,7 @@ func TestKeyWrapperRoundTripBindsStorageKeyAndVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var storageKey [32]byte
+	var storageKey [16]byte
 	storageKey[0] = 1
 	captchaKey := bytes.Repeat([]byte{0x42}, 32)
 	nonce, ciphertext, err := wrapper.Wrap(storageKey, 2, captchaKey)

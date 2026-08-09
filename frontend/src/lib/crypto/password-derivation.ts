@@ -1,5 +1,5 @@
-import { argon2idAsync } from '@noble/hashes/argon2.js';
-import { ARGON2ID_V1, PASSWORD_DERIVATION_UNAVAILABLE } from './password-profile';
+import { argon2dAsync } from '@noble/hashes/argon2.js';
+import { ARGON2D_V1, PASSWORD_DERIVATION_UNAVAILABLE } from './password-profile';
 
 const textEncoder = new TextEncoder();
 
@@ -18,12 +18,12 @@ export async function derivePasswordKeyDirect(
   }
 
   try {
-    return await argon2idAsync(passwordBytes, salt, {
-      version: ARGON2ID_V1.version,
-      m: ARGON2ID_V1.m,
-      t: ARGON2ID_V1.t,
-      p: ARGON2ID_V1.p,
-      dkLen: ARGON2ID_V1.dkLen,
+    return await argon2dAsync(passwordBytes, salt, {
+      version: ARGON2D_V1.version,
+      m: ARGON2D_V1.m,
+      t: ARGON2D_V1.t,
+      p: ARGON2D_V1.p,
+      dkLen: ARGON2D_V1.dkLen,
       asyncTick: 8
     });
   } catch {

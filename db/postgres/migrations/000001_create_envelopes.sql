@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS envelopes (
     captcha_key_nonce BYTEA,
     captcha_key_ciphertext BYTEA,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT envelopes_storage_key_length CHECK (octet_length(storage_key) = 32),
+    CONSTRAINT envelopes_storage_key_length CHECK (octet_length(storage_key) = 16),
     CONSTRAINT envelopes_metadata_nonempty CHECK (octet_length(metadata) > 0),
     CONSTRAINT envelopes_envelope_size CHECK (
         octet_length(envelope) > 0 AND octet_length(envelope) <= 16384

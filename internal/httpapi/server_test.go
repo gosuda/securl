@@ -46,7 +46,7 @@ func TestNewServerRoutesInternalErrorsThroughZerolog(t *testing.T) {
 func TestRequestLoggingContainsOnlyTemplateStatusDurationAndRequestID(t *testing.T) {
 	var logs bytes.Buffer
 	logger := zerolog.New(&logs)
-	storageKey := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x5a}, 32))
+	storageKey := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x5a}, 16))
 	router := NewRouter(Dependencies{
 		Repository: memory.New(),
 		RuntimeConfig: &securlv1.RuntimeConfig{

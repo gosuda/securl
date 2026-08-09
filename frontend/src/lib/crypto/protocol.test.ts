@@ -223,7 +223,7 @@ describe('SecURL v2 envelope protocol', () => {
       password: create(PasswordLayerSchema, {
         salt: metadata.password!.salt,
         nonce: metadata.password!.nonce,
-        profile: PasswordProfile.ARGON2ID_V1
+        profile: PasswordProfile.ARGON2D_V1
       }),
       captcha: create(CaptchaLayerSchema, { nonce: metadata.captcha!.nonce })
     });

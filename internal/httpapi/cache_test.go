@@ -16,9 +16,9 @@ import (
 	"securl.click/securl/internal/store/memory"
 )
 
-func storedEnvelope(t testing.TB, repository store.Repository, flags uint32) ([32]byte, string, []byte) {
+func storedEnvelope(t testing.TB, repository store.Repository, flags uint32) ([16]byte, string, []byte) {
 	t.Helper()
-	var storageKey [32]byte
+	var storageKey [16]byte
 	storageKey[0] = byte(flags + 1)
 	metadata := &securlv1.EnvelopeMetadata{
 		ProtocolVersion: 2,

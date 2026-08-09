@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS envelopes (
-    storage_key BINARY(32) NOT NULL PRIMARY KEY,
+    storage_key BINARY(16) NOT NULL PRIMARY KEY,
     metadata LONGBLOB NOT NULL,
     envelope LONGBLOB NOT NULL,
     request_hash BINARY(32) NOT NULL,
