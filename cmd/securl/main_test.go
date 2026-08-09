@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -145,5 +146,79 @@ func TestRunCreatesUnixSocketAndHealthCheck(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Unix socket service did not shut down")
+	}
+}
+
+func TestExitOnStdinEOFEnvironmentStopsApplication(t *testing.T) {
+	setMainTestEnvironment(t, "127.0.0.1", "0")
+	socketPath := unixSocketPath(t)
+	t.Setenv("SECURL_HTTP_ADDR", "unix:"+socketPath)
+	t.Setenv(exitOnStdinEOFEnvironment, "true")
+	logMessages := make(channelWriter, 8)
+	logger := zerolog.New(logMessages)
+	reader, writer := io.Pipe()
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+
+	enabled, err := stdinEOFShutdownEnabled()
+	if err != nil || !enabled {
+		t.Fatalf("enabled=%v err=%v", enabled, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go shutdownOnStdinEOF(ctx, reader, cancel, &logger)
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, nil, &logger) }()
+
+	select {
+	case <-logMessages:
+	case err := <-done:
+		t.Fatalf("application failed to start: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("application did not start")
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("application did not stop after parent pipe EOF")
+	}
+}
+
+func TestStdinEOFEnvironmentLoadsFromDotEnv(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(directory, ".env"),
+		[]byte(exitOnStdinEOFEnvironment+"=true\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	original, configured := os.LookupEnv(exitOnStdinEOFEnvironment)
+	if err := os.Unsetenv(exitOnStdinEOFEnvironment); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if configured {
+			_ = os.Setenv(exitOnStdinEOFEnvironment, original)
+		} else {
+			_ = os.Unsetenv(exitOnStdinEOFEnvironment)
+		}
+	})
+	t.Chdir(directory)
+
+	if err := loadDotEnv(); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := stdinEOFShutdownEnabled()
+	if err != nil || !enabled {
+		t.Fatalf("enabled=%v err=%v", enabled, err)
 	}
 }

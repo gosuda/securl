@@ -17,6 +17,7 @@ Durations use Go duration syntax such as `3s`, `1m`, `24h`, or `720h`. Boolean v
 | Variable | Default | Description |
 | --- | --- | --- |
 | `SECURL_HTTP_ADDR` | `:8080` | TCP listen address, or an absolute Unix socket path prefixed with `unix:`, such as `unix:/tmp/securl.sock`. Use `127.0.0.1:8080` to bind TCP only to loopback. |
+| `SECURL_EXIT_ON_STDIN_EOF` | `false` | Gracefully stops SecURL when stdin reaches EOF. Enable only when stdin is a lifetime pipe owned by a supervising parent process. |
 | `PORT` | unset | PaaS-provided TCP listen port. When present, overrides TCP values in `SECURL_HTTP_ADDR` and activates `HOST`/`IP` discovery. An explicit `unix:` address takes precedence. |
 | `HOST` | unset | Bind hostname or address used with `PORT`. Empty or unset produces `:PORT`. |
 | `IP` | unset | Optional bind IP used with `PORT`. A valid IPv4 or IPv6 value overrides `HOST`; IPv6 is bracketed automatically. |

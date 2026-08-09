@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joho/godotenv"
 	"golang.org/x/net/idna"
 
 	securlv1 "securl.click/securl/gen/go/securl/v1"
@@ -50,9 +49,6 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return Config{}, fmt.Errorf("load .env: %w", err)
-	}
 	return parseConfig(os.LookupEnv)
 }
 
