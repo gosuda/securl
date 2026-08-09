@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"securl.click/securl/internal/config"
 	"securl.click/securl/internal/store"
 	"securl.click/securl/internal/store/memory"
 )
@@ -139,6 +140,67 @@ func TestHandlerTrackerSealWaitsForStartedHandlersAndRejectsLateRequests(t *test
 	case <-waitDone:
 	case <-time.After(time.Second):
 		t.Fatal("Wait did not return after handler completion")
+	}
+}
+
+func TestCleanupExpiredDeletesAllBatchesAndClosesRepository(t *testing.T) {
+	now := time.Unix(20_000, 0).UTC()
+	repository := newTrackingRepository()
+	for index, expiresAt := range []time.Time{
+		now.Add(-3 * time.Hour), now.Add(-2 * time.Hour), now.Add(-time.Hour), now.Add(time.Hour),
+	} {
+		var storageKey [32]byte
+		storageKey[0] = byte(index + 1)
+		var requestHash [32]byte
+		requestHash[0] = byte(index + 1)
+		if _, err := repository.Create(context.Background(), store.CreateInput{
+			StorageKey: storageKey, Metadata: []byte{1}, Envelope: []byte{2},
+			RequestHash: requestHash, ExpiresAt: expiresAt,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logger := zerolog.Nop()
+	application := &Application{
+		config: config.Config{
+			StoreBackend: "postgres", CleanupInterval: time.Minute, CleanupBatch: 2,
+		},
+		logger:          &logger,
+		openRepository:  func(context.Context) (store.Repository, error) { return repository, nil },
+		shutdownTimeout: time.Second,
+	}
+	deleted, err := application.cleanupExpired(context.Background(), now)
+	if err != nil || deleted != 3 {
+		t.Fatalf("deleted=%d err=%v", deleted, err)
+	}
+	if !repository.closed.Load() {
+		t.Fatal("repository was not closed")
+	}
+	if remaining, err := repository.DeleteExpired(context.Background(), now, 10); err != nil || remaining != 0 {
+		t.Fatalf("remaining=%d err=%v", remaining, err)
+	}
+	var liveKey [32]byte
+	liveKey[0] = 4
+	if _, err := repository.Get(context.Background(), liveKey, now); err != nil {
+		t.Fatalf("live record removed: %v", err)
+	}
+}
+
+func TestCleanupExpiredRejectsMemoryStore(t *testing.T) {
+	opened := false
+	application := &Application{
+		config: config.Config{StoreBackend: "memory"},
+		openRepository: func(context.Context) (store.Repository, error) {
+			opened = true
+			return memory.New(), nil
+		},
+	}
+	if _, err := application.CleanupExpired(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "persistent store backend") {
+		t.Fatalf("err=%v", err)
+	}
+	if opened {
+		t.Fatal("memory repository was opened")
 	}
 }
 

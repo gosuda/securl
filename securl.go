@@ -97,6 +97,47 @@ func (application *Application) ListenAddress() string {
 	return application.config.HTTPAddr
 }
 
+// CleanupExpired deletes every envelope expired when the command starts.
+func (application *Application) CleanupExpired(ctx context.Context) (int64, error) {
+	return application.cleanupExpired(ctx, time.Now().UTC())
+}
+
+func (application *Application) cleanupExpired(ctx context.Context, now time.Time) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if application.config.StoreBackend == "memory" {
+		return 0, errors.New("cleanup requires a persistent store backend")
+	}
+	repository, err := application.openRepository(ctx)
+	if err != nil {
+		return 0, err
+	}
+	batch := application.config.CleanupBatch
+	if batch <= 0 {
+		batch = cleanup.DefaultBatch
+	}
+	worker := cleanup.NewWorker(
+		repository, application.config.CleanupInterval, batch, application.logger,
+	)
+	var total int64
+	var cleanupErr error
+	for {
+		deleted, runErr := worker.RunOnce(ctx, now)
+		if runErr != nil {
+			cleanupErr = runErr
+			break
+		}
+		total += deleted
+		if deleted < int64(batch) {
+			break
+		}
+	}
+	closeContext, cancelClose := context.WithTimeout(context.Background(), application.shutdownTimeout)
+	defer cancelClose()
+	return total, errors.Join(cleanupErr, closeRepository(closeContext, repository))
+}
+
 // Serve runs SecURL on a listener owned by the caller until the context is canceled.
 func (application *Application) Serve(ctx context.Context, listener net.Listener) error {
 	if listener == nil {

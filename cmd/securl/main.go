@@ -50,8 +50,13 @@ func main() {
 	args := os.Args[1:]
 	if err := run(ctx, args, &logger); err != nil {
 		message := "securl stopped"
-		if len(args) > 0 && args[0] == "healthcheck" {
-			message = "health check failed"
+		if len(args) > 0 {
+			switch args[0] {
+			case "healthcheck":
+				message = "health check failed"
+			case "cleanup":
+				message = "cleanup failed"
+			}
 		}
 		logger.Error().Err(err).Msg(message)
 		os.Exit(1)
@@ -97,12 +102,21 @@ func run(ctx context.Context, args []string, logger *zerolog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if len(args) > 0 && args[0] == "healthcheck" {
-		healthContext, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		return securl.CheckHealth(
-			healthContext, application.ListenNetwork(), application.ListenAddress(),
-		)
+	if len(args) > 0 {
+		switch args[0] {
+		case "healthcheck":
+			healthContext, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			return securl.CheckHealth(
+				healthContext, application.ListenNetwork(), application.ListenAddress(),
+			)
+		case "cleanup":
+			deleted, cleanupErr := application.CleanupExpired(ctx)
+			if cleanupErr == nil {
+				logger.Info().Int64("count", deleted).Msg("expired envelopes deleted")
+			}
+			return cleanupErr
+		}
 	}
 	listener, err := net.Listen(application.ListenNetwork(), application.ListenAddress())
 	if err != nil {

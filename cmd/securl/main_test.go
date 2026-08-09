@@ -222,3 +222,12 @@ func TestStdinEOFEnvironmentLoadsFromDotEnv(t *testing.T) {
 		t.Fatalf("enabled=%v err=%v", enabled, err)
 	}
 }
+
+func TestRunCleanupRejectsMemoryStore(t *testing.T) {
+	setMainTestEnvironment(t, "127.0.0.1", "0")
+	logger := zerolog.Nop()
+	err := run(context.Background(), []string{"cleanup"}, &logger)
+	if err == nil || !strings.Contains(err.Error(), "persistent store backend") {
+		t.Fatalf("err=%v", err)
+	}
+}
