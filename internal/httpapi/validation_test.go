@@ -161,6 +161,59 @@ func TestRequestContentTypeAndSizeBoundaries(t *testing.T) {
 	}
 }
 
+func TestCreateEnvelopeSizeBoundaryUsesDefaultLimit(t *testing.T) {
+	metadata := &securlv1.EnvelopeMetadata{
+		ProtocolVersion: 1,
+		TtlSeconds:      3600,
+		PayloadNonce:    bytes.Repeat([]byte{1}, 24),
+	}
+	exactEnvelope := &securlv1.Envelope{
+		Metadata:   metadata,
+		Ciphertext: make([]byte, 6108),
+	}
+	exactEnvelopeBytes, err := exactEnvelope.MarshalVTStrict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exactEnvelopeBytes) != 6144 {
+		t.Fatalf("exact envelope size=%d", len(exactEnvelopeBytes))
+	}
+	exactBody, err := (&securlv1.CreateEnvelopeRequest{
+		StorageKey: make([]byte, 32),
+		Envelope:   exactEnvelope,
+	}).MarshalVTStrict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := postProtobuf(validationRouter(memory.New()), "/api/v1/envelopes", exactBody)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("exact boundary status=%d body=%x", response.Code, response.Body.Bytes())
+	}
+
+	overEnvelope := &securlv1.Envelope{
+		Metadata:   metadata,
+		Ciphertext: make([]byte, 6109),
+	}
+	overEnvelopeBytes, err := overEnvelope.MarshalVTStrict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overEnvelopeBytes) != 6145 {
+		t.Fatalf("over envelope size=%d", len(overEnvelopeBytes))
+	}
+	overBody, err := (&securlv1.CreateEnvelopeRequest{
+		StorageKey: make([]byte, 32),
+		Envelope:   overEnvelope,
+	}).MarshalVTStrict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	response = postProtobuf(validationRouter(memory.New()), "/api/v1/envelopes", overBody)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("over boundary status=%d body=%x", response.Code, response.Body.Bytes())
+	}
+}
+
 func TestCreateAllowsUnlimitedTTLWithoutExpiration(t *testing.T) {
 	repository := memory.New()
 	router := NewRouter(Dependencies{

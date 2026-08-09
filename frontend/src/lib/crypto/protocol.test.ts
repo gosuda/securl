@@ -1,4 +1,4 @@
-import { create } from '@bufbuild/protobuf';
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { bytesToHex, hexToBytes } from '@noble/ciphers/utils.js';
 import { describe, expect, it } from 'vitest';
 import {
@@ -6,7 +6,9 @@ import {
   EnvelopeMetadataSchema,
   EnvelopeSchema,
   PasswordLayerSchema,
-  PasswordProfile
+  PasswordProfile,
+  PayloadSchema,
+  type Envelope
 } from '../gen/securl/v1/envelope_pb.js';
 import {
   decryptEnvelope,
@@ -15,8 +17,31 @@ import {
   deriveStorageKey,
   encodeStorageKey,
   encryptEnvelope,
+  openLayer,
+  serializeMetadata,
   sealLayer
 } from './protocol';
+
+const textEncoder = new TextEncoder();
+
+function openPayloadUrl(envelope: Envelope, idBytes: Uint8Array): string {
+  if (!envelope.metadata) throw new Error('Envelope metadata is required.');
+  const metadata = envelope.metadata;
+  const aad = serializeMetadata(metadata);
+  const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
+  const finalKey = deriveFinalKey(keyMaterial, idBytes, metadata.payloadNonce);
+  keyMaterial.fill(0);
+  try {
+    const payloadBytes = openLayer(finalKey, metadata.payloadNonce, envelope.ciphertext, aad);
+    try {
+      return fromBinary(PayloadSchema, payloadBytes).url;
+    } finally {
+      payloadBytes.fill(0);
+    }
+  } finally {
+    finalKey.fill(0);
+  }
+}
 
 describe('SecURL HKDF-SHA3-256 protocol', () => {
   const idBytes = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]);
@@ -101,6 +126,84 @@ describe('SecURL HKDF-SHA3-256 protocol', () => {
     ).toBe('https://example.com/path?x=1');
     expect(() => decryptEnvelope(envelope, idBytes, { passwordKey })).toThrow(/CAPTCHA key/);
     expect(() => decryptEnvelope(envelope, idBytes, { captchaKey })).toThrow(/Password key/);
+  });
+
+  it('pads URLs with 0-128 zero bytes on 32-byte boundaries', () => {
+    const prefix = 'https://example.com/';
+    const destination = prefix + 'a'.repeat(32 - textEncoder.encode(prefix).length);
+    const cases = [
+      [0, 0],
+      [64, 32],
+      [128, 64],
+      [192, 96],
+      [255, 128]
+    ] as const;
+
+    for (const [choice, expectedPadding] of cases) {
+      const envelope = encryptEnvelope(destination, idBytes, {
+        ttlSeconds: 3600,
+        randomBytes: (length) =>
+          length === 1 ? new Uint8Array([choice]) : new Uint8Array(length).fill(0x31)
+      });
+      const paddedUrl = openPayloadUrl(envelope, idBytes);
+
+      expect(paddedUrl).toBe(destination + '\0'.repeat(expectedPadding));
+      expect(textEncoder.encode(paddedUrl).length).toBe(32 + expectedPadding);
+      expect(textEncoder.encode(paddedUrl).length % 32).toBe(0);
+      expect(decryptEnvelope(envelope, idBytes)).toBe(destination);
+    }
+  });
+
+  it('never lets the padded URL exceed 4096 bytes', () => {
+    const prefix = 'https://example.com/';
+    const nearMaximum = prefix + 'a'.repeat(4000 - textEncoder.encode(prefix).length);
+    const maximum = prefix + 'a'.repeat(4096 - textEncoder.encode(prefix).length);
+    const randomBytes = (length: number) =>
+      length === 1 ? new Uint8Array([255]) : new Uint8Array(length).fill(0x32);
+
+    const nearMaximumEnvelope = encryptEnvelope(nearMaximum, idBytes, {
+      ttlSeconds: 3600,
+      randomBytes
+    });
+    const maximumEnvelope = encryptEnvelope(maximum, idBytes, {
+      ttlSeconds: 3600,
+      randomBytes
+    });
+    const paddedNearMaximum = openPayloadUrl(nearMaximumEnvelope, idBytes);
+    const paddedMaximum = openPayloadUrl(maximumEnvelope, idBytes);
+
+    expect(textEncoder.encode(paddedNearMaximum)).toHaveLength(4096);
+    expect(paddedNearMaximum.slice(nearMaximum.length)).toBe('\0'.repeat(96));
+    expect(textEncoder.encode(paddedMaximum)).toHaveLength(4096);
+    expect(paddedMaximum).toBe(maximum);
+    expect(decryptEnvelope(nearMaximumEnvelope, idBytes)).toBe(nearMaximum);
+    expect(decryptEnvelope(maximumEnvelope, idBytes)).toBe(maximum);
+    expect(() =>
+      encryptEnvelope(`${maximum}a`, idBytes, { ttlSeconds: 3600, randomBytes })
+    ).toThrow(/must not exceed 4096 UTF-8 bytes/);
+  });
+
+  it('ignores authenticated payload content after the first null byte', () => {
+    const destination = 'https://example.com/';
+    const metadata = create(EnvelopeMetadataSchema, {
+      protocolVersion: 1,
+      ttlSeconds: 3600,
+      payloadNonce
+    });
+    const aad = serializeMetadata(metadata);
+    const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
+    const finalKey = deriveFinalKey(keyMaterial, idBytes, payloadNonce);
+    const payloadBytes = toBinary(
+      PayloadSchema,
+      create(PayloadSchema, { url: `${destination}\0ignored` })
+    );
+    const ciphertext = sealLayer(finalKey, payloadNonce, payloadBytes, aad);
+    payloadBytes.fill(0);
+    keyMaterial.fill(0);
+    finalKey.fill(0);
+
+    const envelope = create(EnvelopeSchema, { metadata, ciphertext });
+    expect(decryptEnvelope(envelope, idBytes)).toBe(destination);
   });
 
   it('uses a zero TTL sentinel for envelopes that never expire', () => {

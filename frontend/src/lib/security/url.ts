@@ -1,5 +1,5 @@
 const textEncoder = new TextEncoder();
-const MAX_URL_BYTES = 4096;
+export const MAX_URL_BYTES = 4096;
 const ASCII_EDGE_WHITESPACE = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 const EXPLICIT_SCHEME = /^([a-z][a-z0-9+.-]*):/i;

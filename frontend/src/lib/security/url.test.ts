@@ -41,6 +41,17 @@ describe('destination URL validation', () => {
     );
   });
 
+  it('accepts exactly 4096 canonical URL bytes and rejects 4097', () => {
+    const textEncoder = new TextEncoder();
+    const prefix = 'https://example.com/';
+    const destination = prefix + 'a'.repeat(4096 - textEncoder.encode(prefix).length);
+
+    expect(textEncoder.encode(validateDestination(destination).href)).toHaveLength(4096);
+    expect(() => validateDestination(`${destination}a`)).toThrow(
+      /between 1 and 4096 UTF-8 bytes/
+    );
+  });
+
   it('rejects local names and non-public IPv4 literals, including alternate URL forms', () => {
     for (const input of [
       'http://localhost/',

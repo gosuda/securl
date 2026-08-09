@@ -53,7 +53,7 @@ The listener only controls where the process accepts traffic. If a reverse proxy
 | `SECURL_STORE_BACKEND` | `memory` | `postgres` | Storage implementation: `memory`, `postgres`, or `mariadb`. Memory storage is erased when the process exits. |
 | `SECURL_POSTGRES_URL` | empty | `postgres://securl:password@postgres:5432/securl` | PostgreSQL or CockroachDB connection URL. It is required when `SECURL_STORE_BACKEND=postgres`. SecURL connects, checks the server version, and applies embedded migrations at startup. |
 | `SECURL_MARIADB_DSN` | empty | `securl:password@tcp(mariadb:3306)/securl` | MariaDB DSN in `go-sql-driver/mysql` format. It is required when `SECURL_STORE_BACKEND=mariadb`. SecURL forces UTC time parsing, `utf8mb4`, and `utf8mb4_bin`. |
-| `SECURL_MAX_ENVELOPE_BYTES` | `16384` | `32768` | Largest serialized encrypted envelope accepted by the API, in bytes. It must be a positive integer. Raising it allows larger encrypted metadata and ciphertext; lowering it may reject links produced by existing clients. |
+| `SECURL_MAX_ENVELOPE_BYTES` | `6144` | `8192` | Largest serialized encrypted envelope accepted by the API, in bytes. It must be a positive integer. The default leaves 1,881 bytes of headroom above the current protocol maximum of 4,263 bytes. Raising it allows larger future metadata and ciphertext; lowering it may reject links produced by existing clients. |
 
 ### Database startup behavior
 

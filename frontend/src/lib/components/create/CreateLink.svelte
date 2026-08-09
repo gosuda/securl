@@ -186,8 +186,10 @@
   </header>
 
   {#if state === 'success'}
-    <ShortUrlResult url={protectedUrl} />
-    <Button variant="secondary" on:click={reset}>Create another link</Button>
+    <div class="result-stack">
+      <ShortUrlResult url={protectedUrl} />
+      <Button variant="secondary" on:click={reset}>Create another link</Button>
+    </div>
   {:else}
     <form on:submit|preventDefault={submit}>
       <Panel>

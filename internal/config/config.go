@@ -127,7 +127,7 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 	if config.CleanupBatch, err = positiveInt32(value("SECURL_CLEANUP_BATCH", "500")); err != nil {
 		return Config{}, fmt.Errorf("SECURL_CLEANUP_BATCH: %w", err)
 	}
-	if config.MaxEnvelopeBytes, err = positiveInt(value("SECURL_MAX_ENVELOPE_BYTES", "16384")); err != nil {
+	if config.MaxEnvelopeBytes, err = positiveInt(value("SECURL_MAX_ENVELOPE_BYTES", "6144")); err != nil {
 		return Config{}, fmt.Errorf("SECURL_MAX_ENVELOPE_BYTES: %w", err)
 	}
 	if config.SafeBrowsingEnabled, err = strconv.ParseBool(value("SECURL_SAFE_BROWSING_ENABLED", "false")); err != nil {

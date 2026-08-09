@@ -9,7 +9,7 @@
   <h2 tabindex="-1">Protected link ready</h2>
   <div class="result-row">
     <code>{url}</code>
+    <p>Share the whole link exactly as shown.</p>
     <CopyButton value={url} />
   </div>
-  <p>Share the whole link exactly as shown.</p>
 </Panel>

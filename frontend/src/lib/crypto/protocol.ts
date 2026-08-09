@@ -3,6 +3,7 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha3_256 } from '@noble/hashes/sha3.js';
 import { normalizeServiceDomain } from '../security/domain';
+import { MAX_URL_BYTES } from '../security/url';
 import {
   CaptchaLayerSchema,
   EnvelopeMetadataSchema,
@@ -25,6 +26,9 @@ const KNOWN_FEATURE_FLAGS =
 export const KEY_LENGTH = 32;
 export const PAYLOAD_NONCE_LENGTH = 24;
 export const PASSWORD_SALT_LENGTH = 16;
+const URL_PADDING_ALIGNMENT = 32;
+const MAX_URL_PADDING_LENGTH = 128;
+const NULL_BYTE = '\0';
 
 export interface PasswordEncryptionLayer {
   key: Uint8Array;
@@ -62,6 +66,46 @@ function takeRandomBytes(length: number, source?: (length: number) => Uint8Array
     throw new Error(`Random source returned ${bytes.length} bytes; expected ${length}.`);
   }
   return bytes.slice();
+}
+
+function padDestinationUrl(
+  destinationUrl: string,
+  source?: (length: number) => Uint8Array
+): string {
+  const destinationBytes = textEncoder.encode(destinationUrl);
+  const destinationLength = destinationBytes.length;
+  destinationBytes.fill(0);
+  if (destinationLength > MAX_URL_BYTES) {
+    throw new Error(`Destination URL must not exceed ${MAX_URL_BYTES} UTF-8 bytes.`);
+  }
+
+  const alignmentPadding =
+    (URL_PADDING_ALIGNMENT - (destinationLength % URL_PADDING_ALIGNMENT)) %
+    URL_PADDING_ALIGNMENT;
+  const availablePadding = Math.min(
+    MAX_URL_PADDING_LENGTH,
+    MAX_URL_BYTES - destinationLength
+  );
+  const candidateCount =
+    Math.floor((availablePadding - alignmentPadding) / URL_PADDING_ALIGNMENT) + 1;
+  if (candidateCount === 1) {
+    return alignmentPadding === 0
+      ? destinationUrl
+      : destinationUrl + NULL_BYTE.repeat(alignmentPadding);
+  }
+
+  const randomChoice = takeRandomBytes(1, source);
+  try {
+    // Choose among only the padding lengths that align the padded URL byte length.
+    const paddingLength =
+      alignmentPadding +
+      Math.floor((randomChoice[0] * candidateCount) / 256) * URL_PADDING_ALIGNMENT;
+    return paddingLength === 0
+      ? destinationUrl
+      : destinationUrl + NULL_BYTE.repeat(paddingLength);
+  } finally {
+    randomChoice.fill(0);
+  }
 }
 
 export function deriveStorageKey(idBytes: Uint8Array, serviceDomain: string): Uint8Array {
@@ -219,9 +263,10 @@ export function encryptEnvelope(
       : undefined
   });
   const aad = serializeMetadata(metadata);
+  const paddedDestinationUrl = padDestinationUrl(destinationUrl, options.randomBytes);
   const payloadBytes = toBinary(
     PayloadSchema,
-    create(PayloadSchema, { url: destinationUrl }),
+    create(PayloadSchema, { url: paddedDestinationUrl }),
     { writeUnknownFields: false }
   );
   const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
@@ -285,7 +330,9 @@ export function decryptEnvelope(
     const payloadBytes = openLayer(finalKey, metadata.payloadNonce, plaintext, aad);
     plaintext.fill(0);
     plaintext = payloadBytes;
-    return fromBinary(PayloadSchema, payloadBytes).url;
+    const paddedUrl = fromBinary(PayloadSchema, payloadBytes).url;
+    const paddingStart = paddedUrl.indexOf(NULL_BYTE);
+    return paddingStart === -1 ? paddedUrl : paddedUrl.slice(0, paddingStart);
   } finally {
     plaintext.fill(0);
     finalKey.fill(0);

@@ -70,7 +70,7 @@ func main() {
 			CreateCaptchaRequired: true,
 		},
 		AllowedTTLs:      allowedTTLs,
-		MaxEnvelopeBytes: 16384,
+		MaxEnvelopeBytes: 6144,
 		Frontend:         frontendHandler,
 		PublicOrigins:    map[string]struct{}{origin: {}},
 		Logger:           &logger,

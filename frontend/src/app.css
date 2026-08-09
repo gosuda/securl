@@ -486,7 +486,13 @@ input[type='checkbox'] {
   width: 100%;
 }
 
-.shell > .btn {
+.result-stack {
+  display: grid;
+  align-self: start;
+  gap: var(--space-lg);
+}
+
+.result-stack > .btn {
   justify-self: start;
 }
 
@@ -499,6 +505,10 @@ input[type='checkbox'] {
 .result-row {
   margin-block: var(--space-lg);
 }
+.result-row > p {
+  margin: 0;
+}
+
 
 code,
 .hostname {
@@ -517,6 +527,7 @@ code,
 }
 
 .result-row code {
+  width: 100%;
   min-width: 0;
 }
 
@@ -690,6 +701,14 @@ code,
     align-items: center;
   }
 
+  .result-row code {
+    grid-column: 1 / -1;
+  }
+
+  .result-row > .btn {
+    justify-self: end;
+  }
+
   .actions {
     display: flex;
     flex-wrap: wrap;
@@ -697,7 +716,7 @@ code,
   }
 }
 
-@media (min-width: 48rem) {
+@media (min-width: 56rem) {
   .shell {
     grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
     gap: var(--space-xl);
@@ -721,14 +740,10 @@ code,
 
   .shell > form,
   .shell > .panel,
-  .shell > .btn,
   .shell > div:not(.loading-block) {
     grid-column: 2;
   }
 
-  .shell > .btn {
-    margin-block-start: calc(var(--space-lg) * -1);
-  }
 
   .shell--loading {
     grid-template-columns: minmax(0, 1fr);

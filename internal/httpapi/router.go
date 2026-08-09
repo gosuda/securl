@@ -38,7 +38,7 @@ type api struct {
 
 func NewRouter(dependencies Dependencies) http.Handler {
 	if dependencies.MaxEnvelopeBytes <= 0 {
-		dependencies.MaxEnvelopeBytes = 16384
+		dependencies.MaxEnvelopeBytes = 6144
 	}
 	if dependencies.Now == nil {
 		dependencies.Now = time.Now

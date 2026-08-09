@@ -19,7 +19,7 @@ func TestDefaultConfiguration(t *testing.T) {
 	}
 	if config.HTTPNetwork != "tcp" || config.HTTPAddr != ":8080" || config.StoreBackend != "memory" ||
 		config.FrontendMode != "embedded" || config.DefaultTTL.String() != "168h0m0s" ||
-		config.MaxEnvelopeBytes != 16384 || config.SafeBrowsingEnabled {
+		config.MaxEnvelopeBytes != 6144 || config.SafeBrowsingEnabled {
 		t.Fatalf("config=%+v", config)
 	}
 	if _, ok := config.PublicOrigins["http://localhost:8080"]; !ok {
