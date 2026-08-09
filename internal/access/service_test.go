@@ -29,7 +29,7 @@ func TestInvalidCaptchaDoesNotConsumeBurnRecord(t *testing.T) {
 	var storageKey [32]byte
 	storageKey[0] = 7
 	captchaKey := bytes.Repeat([]byte{0x31}, 32)
-	nonce, ciphertext, err := wrapper.Wrap(storageKey, 1, captchaKey)
+	nonce, ciphertext, err := wrapper.Wrap(storageKey, 2, captchaKey)
 	if err != nil {
 		t.Fatal(err)
 	}

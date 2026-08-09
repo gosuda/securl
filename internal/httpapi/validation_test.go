@@ -23,7 +23,7 @@ func validCreateBody(t testing.TB) []byte {
 		StorageKey: make([]byte, 32),
 		Envelope: &securlv1.Envelope{
 			Metadata: &securlv1.EnvelopeMetadata{
-				ProtocolVersion: 1,
+				ProtocolVersion: 2,
 				TtlSeconds:      3600,
 				PayloadNonce:    bytes.Repeat([]byte{1}, 24),
 			},
@@ -163,7 +163,7 @@ func TestRequestContentTypeAndSizeBoundaries(t *testing.T) {
 
 func TestCreateEnvelopeSizeBoundaryUsesDefaultLimit(t *testing.T) {
 	metadata := &securlv1.EnvelopeMetadata{
-		ProtocolVersion: 1,
+		ProtocolVersion: 2,
 		TtlSeconds:      3600,
 		PayloadNonce:    bytes.Repeat([]byte{1}, 24),
 	}
@@ -228,7 +228,7 @@ func TestCreateAllowsUnlimitedTTLWithoutExpiration(t *testing.T) {
 		StorageKey: make([]byte, 32),
 		Envelope: &securlv1.Envelope{
 			Metadata: &securlv1.EnvelopeMetadata{
-				ProtocolVersion: 1, TtlSeconds: 0, PayloadNonce: bytes.Repeat([]byte{1}, 24),
+				ProtocolVersion: 2, TtlSeconds: 0, PayloadNonce: bytes.Repeat([]byte{1}, 24),
 			},
 			Ciphertext: []byte{2, 3, 4},
 		},
@@ -256,21 +256,27 @@ func TestCreateValidatesFlagsTTLAndLayerMetadata(t *testing.T) {
 		metadata *securlv1.EnvelopeMetadata
 	}{
 		{
+			name: "unsupported protocol",
+			metadata: &securlv1.EnvelopeMetadata{
+				ProtocolVersion: 1, TtlSeconds: 3600, PayloadNonce: make([]byte, 24),
+			},
+		},
+		{
 			name: "unknown flag",
 			metadata: &securlv1.EnvelopeMetadata{
-				ProtocolVersion: 1, FeatureFlags: 8, TtlSeconds: 3600, PayloadNonce: make([]byte, 24),
+				ProtocolVersion: 2, FeatureFlags: 8, TtlSeconds: 3600, PayloadNonce: make([]byte, 24),
 			},
 		},
 		{
 			name: "unallowed ttl",
 			metadata: &securlv1.EnvelopeMetadata{
-				ProtocolVersion: 1, TtlSeconds: 7200, PayloadNonce: make([]byte, 24),
+				ProtocolVersion: 2, TtlSeconds: 7200, PayloadNonce: make([]byte, 24),
 			},
 		},
 		{
 			name: "password mismatch",
 			metadata: &securlv1.EnvelopeMetadata{
-				ProtocolVersion: 1,
+				ProtocolVersion: 2,
 				FeatureFlags:    uint32(securlv1.FeatureFlag_FEATURE_FLAG_PASSWORD),
 				TtlSeconds:      3600,
 				PayloadNonce:    make([]byte, 24),
@@ -279,7 +285,7 @@ func TestCreateValidatesFlagsTTLAndLayerMetadata(t *testing.T) {
 		{
 			name: "captcha mismatch",
 			metadata: &securlv1.EnvelopeMetadata{
-				ProtocolVersion: 1,
+				ProtocolVersion: 2,
 				FeatureFlags:    uint32(securlv1.FeatureFlag_FEATURE_FLAG_CAPTCHA),
 				TtlSeconds:      3600,
 				PayloadNonce:    make([]byte, 24),

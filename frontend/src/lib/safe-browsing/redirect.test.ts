@@ -4,47 +4,90 @@ import { RedirectCoordinator } from './redirect';
 afterEach(() => vi.useRealTimers());
 
 describe('redirect safety coordination', () => {
-  it('never redirects a clean result before exactly five seconds', async () => {
+  it('starts scanning with one second remaining and redirects immediately when clean', async () => {
     vi.useFakeTimers();
-    const scan = Promise.withResolvers<'clean' | 'threat'>();
+    const scanResult = Promise.withResolvers<'clean' | 'threat'>();
+    const scan = vi.fn(() => scanResult.promise);
     const redirect = vi.fn();
-    const coordinator = new RedirectCoordinator(() => scan.promise, redirect, () => {});
+    const coordinator = new RedirectCoordinator(scan, redirect, () => {});
     coordinator.start();
-    scan.resolve('clean');
-    await Promise.resolve();
 
-    await vi.advanceTimersByTimeAsync(4999);
-    expect(redirect).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(scan).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
+    expect(scan).toHaveBeenCalledOnce();
+    expect(redirect).not.toHaveBeenCalled();
+
+    scanResult.resolve('clean');
+    await Promise.resolve();
+    expect(redirect).toHaveBeenCalledOnce();
+  });
+
+  it('uses an existing deadline to schedule the final-second scan', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(2000);
+    const scanResult = Promise.withResolvers<'clean' | 'threat'>();
+    const scan = vi.fn(() => scanResult.promise);
+    const redirect = vi.fn();
+    const coordinator = new RedirectCoordinator(scan, redirect, () => {});
+    coordinator.start(5000);
+
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(scan).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(scan).toHaveBeenCalledOnce();
+
+    scanResult.resolve('clean');
+    await Promise.resolve();
     expect(redirect).toHaveBeenCalledOnce();
   });
 
   it('waits after five seconds until the safety scan is clean', async () => {
     vi.useFakeTimers();
-    const scan = Promise.withResolvers<'clean' | 'threat'>();
+    const scanResult = Promise.withResolvers<'clean' | 'threat'>();
+    const scan = vi.fn(() => scanResult.promise);
     const redirect = vi.fn();
-    const coordinator = new RedirectCoordinator(() => scan.promise, redirect, () => {});
+    const coordinator = new RedirectCoordinator(scan, redirect, () => {});
     coordinator.start();
 
     await vi.advanceTimersByTimeAsync(5000);
+    expect(scan).toHaveBeenCalledOnce();
     expect(redirect).not.toHaveBeenCalled();
-    scan.resolve('clean');
+    scanResult.resolve('clean');
     await Promise.resolve();
     expect(redirect).toHaveBeenCalledOnce();
   });
 
   it('skips the delay but waits for a clean safety scan before redirecting', async () => {
     vi.useFakeTimers();
-    const scan = Promise.withResolvers<'clean' | 'threat'>();
+    const scanResult = Promise.withResolvers<'clean' | 'threat'>();
+    const scan = vi.fn(() => scanResult.promise);
     const redirect = vi.fn();
-    const coordinator = new RedirectCoordinator(() => scan.promise, redirect, () => {});
+    const coordinator = new RedirectCoordinator(scan, redirect, () => {});
     coordinator.start();
+    expect(scan).not.toHaveBeenCalled();
     coordinator.openAfterSafetyCheck();
+    expect(scan).toHaveBeenCalledOnce();
     expect(redirect).not.toHaveBeenCalled();
 
-    scan.resolve('clean');
+    scanResult.resolve('clean');
     await Promise.resolve();
     expect(redirect).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(redirect).toHaveBeenCalledOnce();
+  });
+
+  it('bypasses the delay before the scheduled safety scan starts', async () => {
+    vi.useFakeTimers();
+    const scanResult = Promise.withResolvers<'clean' | 'threat'>();
+    const scan = vi.fn(() => scanResult.promise);
+    const redirect = vi.fn();
+    const coordinator = new RedirectCoordinator(scan, redirect, () => {});
+    coordinator.start();
+    coordinator.openWithoutSafetyCheck();
+
+    expect(redirect).toHaveBeenCalledOnce();
+    expect(scan).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(10000);
     expect(redirect).toHaveBeenCalledOnce();
   });

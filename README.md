@@ -1,8 +1,6 @@
 # SecURL
 
-SecURL is a self-hosted service for creating encrypted, protected links. The destination is encrypted in the browser, and the URL fragment needed to open it is never sent to the server. The server only keeps an opaque storage key and the encrypted envelope.
-
-It works as a single Go service with the frontend embedded, so the default setup is intentionally small.
+SecURL is a secure URL shortener that respects user privacy. Links are encrypted in your browser, so the server cannot read their destinations.
 
 ## Quick start
 
@@ -36,6 +34,10 @@ The frontend build is written to `internal/frontend/dist` and embedded into the 
 The standalone command loads `.env` from the current working directory. Environment variables already set by the process take precedence.
 
 Start with `.env.example`, then use the [configuration guide](docs/configuration.md) when you need persistent storage, a public deployment, an external frontend, Safe Browsing, or CAPTCHA. The guide includes the default, a working example, and the important constraints for every supported variable.
+
+## Cryptography
+
+The current browser-side key derivation, envelope encryption, padding, password, and CAPTCHA specifications are documented in the [cryptography guide](docs/cryptography.md).
 
 ## Useful commands
 

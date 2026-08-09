@@ -502,6 +502,16 @@ input[type='checkbox'] {
   gap: var(--space-sm);
 }
 
+.redirect-actions {
+  display: grid;
+  gap: var(--space-sm);
+  margin-block-start: var(--space-lg);
+}
+
+.redirect-actions > .btn {
+  width: 100%;
+}
+
 .result-row {
   margin-block: var(--space-lg);
 }

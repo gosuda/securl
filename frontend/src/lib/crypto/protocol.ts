@@ -18,10 +18,12 @@ import {
 
 const textEncoder = new TextEncoder();
 const EMPTY_INFO = new Uint8Array();
-const STORAGE_KEY_SALT_PREFIX = textEncoder.encode('v1-storage-key\0');
-const ENCRYPTION_KEY_SALT = textEncoder.encode('v1-encryption-key');
+const ROOT_KEY_SALT_PREFIX = textEncoder.encode('v2-root-key\0');
+const STORAGE_KEY_SALT_PREFIX = textEncoder.encode('v2-storage-key\0');
+const ENCRYPTION_KEY_SALT = textEncoder.encode('v2-encryption-key');
 const KNOWN_FEATURE_FLAGS =
   FeatureFlag.CAPTCHA | FeatureFlag.PASSWORD | FeatureFlag.BURN_AFTER_READ;
+export const PROTOCOL_VERSION = 2;
 
 export const KEY_LENGTH = 32;
 export const PAYLOAD_NONCE_LENGTH = 24;
@@ -29,6 +31,18 @@ export const PASSWORD_SALT_LENGTH = 16;
 const URL_PADDING_ALIGNMENT = 32;
 const MAX_URL_PADDING_LENGTH = 128;
 const NULL_BYTE = '\0';
+
+export class IncorrectPasswordError extends Error {
+  constructor() {
+    super('Incorrect password.');
+    this.name = 'IncorrectPasswordError';
+  }
+}
+export interface LinkKeys {
+  storageKey: Uint8Array;
+  encryptionKeyMaterial: Uint8Array;
+}
+
 
 export interface PasswordEncryptionLayer {
   key: Uint8Array;
@@ -108,18 +122,34 @@ function padDestinationUrl(
   }
 }
 
-export function deriveStorageKey(idBytes: Uint8Array, serviceDomain: string): Uint8Array {
-  requireIdBytes(idBytes);
+export function deriveRootKeySalt(serviceDomain: string): Uint8Array {
   const domainBytes = textEncoder.encode(normalizeServiceDomain(serviceDomain));
-  const salt = new Uint8Array(STORAGE_KEY_SALT_PREFIX.length + domainBytes.length);
-  salt.set(STORAGE_KEY_SALT_PREFIX);
-  salt.set(domainBytes, STORAGE_KEY_SALT_PREFIX.length);
-  return hkdf(sha3_256, idBytes, salt, EMPTY_INFO, KEY_LENGTH);
+  const input = new Uint8Array(ROOT_KEY_SALT_PREFIX.length + domainBytes.length);
+  input.set(ROOT_KEY_SALT_PREFIX);
+  input.set(domainBytes, ROOT_KEY_SALT_PREFIX.length);
+  const digest = sha3_256(input);
+  input.fill(0);
+  const salt = digest.slice(0, PASSWORD_SALT_LENGTH);
+  digest.fill(0);
+  return salt;
 }
 
-export function deriveEncryptionKeyMaterial(idBytes: Uint8Array): Uint8Array {
-  requireIdBytes(idBytes);
-  return hkdf(sha3_256, idBytes, ENCRYPTION_KEY_SALT, EMPTY_INFO, KEY_LENGTH);
+export function deriveLinkKeys(rootKey: Uint8Array, serviceDomain: string): LinkKeys {
+  requireKey(rootKey, 'Root key');
+  const domainBytes = textEncoder.encode(normalizeServiceDomain(serviceDomain));
+  const storageSalt = new Uint8Array(STORAGE_KEY_SALT_PREFIX.length + domainBytes.length);
+  storageSalt.set(STORAGE_KEY_SALT_PREFIX);
+  storageSalt.set(domainBytes, STORAGE_KEY_SALT_PREFIX.length);
+  const storageKey = hkdf(sha3_256, rootKey, storageSalt, EMPTY_INFO, KEY_LENGTH);
+  storageSalt.fill(0);
+  const encryptionKeyMaterial = hkdf(
+    sha3_256,
+    rootKey,
+    ENCRYPTION_KEY_SALT,
+    EMPTY_INFO,
+    KEY_LENGTH
+  );
+  return { storageKey, encryptionKeyMaterial };
 }
 
 export function deriveFinalKey(
@@ -149,7 +179,7 @@ export function encodeStorageKey(storageKey: Uint8Array): string {
 }
 
 export function validateEnvelopeMetadata(metadata: EnvelopeMetadata): void {
-  if (metadata.protocolVersion !== 1) {
+  if (metadata.protocolVersion !== PROTOCOL_VERSION) {
     throw new Error('Unsupported protocol version.');
   }
   if ((metadata.featureFlags & ~KNOWN_FEATURE_FLAGS) !== 0) {
@@ -218,9 +248,11 @@ export function openLayer(
 export function encryptEnvelope(
   destinationUrl: string,
   idBytes: Uint8Array,
+  encryptionKeyMaterial: Uint8Array,
   options: EncryptEnvelopeOptions
 ): Envelope {
   requireIdBytes(idBytes);
+  requireKey(encryptionKeyMaterial, 'Encryption key material');
   if (!Number.isInteger(options.ttlSeconds) || options.ttlSeconds < 0) {
     throw new Error('TTL must be a non-negative integer. Zero means no expiration.');
   }
@@ -247,7 +279,7 @@ export function encryptEnvelope(
     ? takeRandomBytes(PAYLOAD_NONCE_LENGTH, options.randomBytes)
     : undefined;
   const metadata = create(EnvelopeMetadataSchema, {
-    protocolVersion: 1,
+    protocolVersion: PROTOCOL_VERSION,
     featureFlags,
     ttlSeconds: options.ttlSeconds,
     payloadNonce,
@@ -269,9 +301,7 @@ export function encryptEnvelope(
     create(PayloadSchema, { url: paddedDestinationUrl }),
     { writeUnknownFields: false }
   );
-  const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
-  const finalKey = deriveFinalKey(keyMaterial, idBytes, payloadNonce);
-  keyMaterial.fill(0);
+  const finalKey = deriveFinalKey(encryptionKeyMaterial, idBytes, payloadNonce);
 
   let ciphertext = sealLayer(finalKey, payloadNonce, payloadBytes, aad);
   payloadBytes.fill(0);
@@ -293,9 +323,11 @@ export function encryptEnvelope(
 export function decryptEnvelope(
   envelope: Envelope,
   idBytes: Uint8Array,
+  encryptionKeyMaterial: Uint8Array,
   options: DecryptEnvelopeOptions = {}
 ): string {
   requireIdBytes(idBytes);
+  requireKey(encryptionKeyMaterial, 'Encryption key material');
   if (!envelope.metadata || envelope.ciphertext.length === 0) {
     throw new Error('Envelope is missing required data.');
   }
@@ -313,9 +345,7 @@ export function decryptEnvelope(
   if (options.captchaKey) requireKey(options.captchaKey, 'CAPTCHA key');
 
   let plaintext: Uint8Array<ArrayBufferLike> = envelope.ciphertext.slice();
-  const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
-  const finalKey = deriveFinalKey(keyMaterial, idBytes, metadata.payloadNonce);
-  keyMaterial.fill(0);
+  const finalKey = deriveFinalKey(encryptionKeyMaterial, idBytes, metadata.payloadNonce);
   try {
     if (captchaEnabled && metadata.captcha && options.captchaKey) {
       const next = openLayer(options.captchaKey, metadata.captcha.nonce, plaintext, aad);
@@ -323,9 +353,13 @@ export function decryptEnvelope(
       plaintext = next;
     }
     if (passwordEnabled && metadata.password && options.passwordKey) {
-      const next = openLayer(options.passwordKey, metadata.password.nonce, plaintext, aad);
-      plaintext.fill(0);
-      plaintext = next;
+      try {
+        const next = openLayer(options.passwordKey, metadata.password.nonce, plaintext, aad);
+        plaintext.fill(0);
+        plaintext = next;
+      } catch {
+        throw new IncorrectPasswordError();
+      }
     }
     const payloadBytes = openLayer(finalKey, metadata.payloadNonce, plaintext, aad);
     plaintext.fill(0);

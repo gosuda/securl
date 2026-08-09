@@ -11,11 +11,11 @@ import {
   type Envelope
 } from '../gen/securl/v1/envelope_pb.js';
 import {
+  PROTOCOL_VERSION,
+  IncorrectPasswordError,
   decryptEnvelope,
-  deriveEncryptionKeyMaterial,
   deriveFinalKey,
-  deriveStorageKey,
-  encodeStorageKey,
+  deriveLinkKeys,
   encryptEnvelope,
   openLayer,
   serializeMetadata,
@@ -24,13 +24,15 @@ import {
 
 const textEncoder = new TextEncoder();
 
-function openPayloadUrl(envelope: Envelope, idBytes: Uint8Array): string {
+function openPayloadUrl(
+  envelope: Envelope,
+  idBytes: Uint8Array,
+  encryptionKeyMaterial: Uint8Array
+): string {
   if (!envelope.metadata) throw new Error('Envelope metadata is required.');
   const metadata = envelope.metadata;
   const aad = serializeMetadata(metadata);
-  const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
-  const finalKey = deriveFinalKey(keyMaterial, idBytes, metadata.payloadNonce);
-  keyMaterial.fill(0);
+  const finalKey = deriveFinalKey(encryptionKeyMaterial, idBytes, metadata.payloadNonce);
   try {
     const payloadBytes = openLayer(finalKey, metadata.payloadNonce, envelope.ciphertext, aad);
     try {
@@ -43,42 +45,22 @@ function openPayloadUrl(envelope: Envelope, idBytes: Uint8Array): string {
   }
 }
 
-describe('SecURL HKDF-SHA3-256 protocol', () => {
+describe('SecURL v2 envelope protocol', () => {
   const idBytes = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]);
+  const encryptionKeyMaterial = hexToBytes(
+    'ce5d43ea7c46baf44ab56b16d455f021db972374f300ab7b312a63c5e9ad94d4'
+  );
   const payloadNonce = new Uint8Array(Array.from({ length: 24 }, (_, index) => index));
 
-  it('matches the fixed storage and encryption key vectors', () => {
-    const storageKey = deriveStorageKey(idBytes, 'BÜCHER.Example.');
-    const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
-
-    expect(bytesToHex(storageKey)).toBe(
-      '0b335c693aba8aa1a1cfc4a4358ded9a52ef2b728626946193c8302d9a6756a3'
-    );
-    expect(bytesToHex(keyMaterial)).toBe(
-      'ce5d43ea7c46baf44ab56b16d455f021db972374f300ab7b312a63c5e9ad94d4'
-    );
-    expect(encodeStorageKey(storageKey)).toBe('CzNcaTq6iqGhz8SkNY3tmlLvK3KGJpRhk8gwLZpnVqM');
-    expect(encodeStorageKey(storageKey)).toHaveLength(43);
-  });
-
-  it('separates domains while canonical Unicode and Punycode domains share a namespace', () => {
-    const unicode = deriveStorageKey(idBytes, 'BÜCHER.Example.');
-    const punycode = deriveStorageKey(idBytes, 'xn--bcher-kva.example');
-    const otherDomain = deriveStorageKey(idBytes, 'other.example');
-    expect(unicode).toEqual(punycode);
-    expect(otherDomain).not.toEqual(unicode);
-  });
-
   it('binds the final key to both ID and payload nonce', () => {
-    const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
-    const finalKey = deriveFinalKey(keyMaterial, idBytes, payloadNonce);
+    const finalKey = deriveFinalKey(encryptionKeyMaterial, idBytes, payloadNonce);
     expect(bytesToHex(finalKey)).toBe(
       '39406d8270ed8d5a6d4f5dbd7e0d09fc7f6c4436b5cf97ec367baaedf66ab2d4'
     );
 
     const changedNonce = payloadNonce.slice();
     changedNonce[23] ^= 1;
-    expect(deriveFinalKey(keyMaterial, idBytes, changedNonce)).not.toEqual(finalKey);
+    expect(deriveFinalKey(encryptionKeyMaterial, idBytes, changedNonce)).not.toEqual(finalKey);
   });
 
   it('matches the IETF XChaCha20-Poly1305 known-answer vector', () => {
@@ -109,7 +91,7 @@ describe('SecURL HKDF-SHA3-256 protocol', () => {
     const randomBytes = (length: number) => new Uint8Array(length).fill(randomByte++);
     const passwordKey = new Uint8Array(32).fill(0x41);
     const captchaKey = new Uint8Array(32).fill(0x42);
-    const envelope = encryptEnvelope('https://example.com/path?x=1', idBytes, {
+    const envelope = encryptEnvelope('https://example.com/path?x=1', idBytes, encryptionKeyMaterial, {
       ttlSeconds: 604800,
       password: { key: passwordKey, salt: new Uint8Array(16).fill(0x51) },
       captchaKey,
@@ -122,10 +104,16 @@ describe('SecURL HKDF-SHA3-256 protocol', () => {
     expect(envelope.metadata?.password?.nonce).toEqual(new Uint8Array(24).fill(2));
     expect(envelope.metadata?.captcha?.nonce).toEqual(new Uint8Array(24).fill(3));
     expect(
-      decryptEnvelope(envelope, idBytes, { passwordKey, captchaKey })
+      decryptEnvelope(envelope, idBytes, encryptionKeyMaterial, { passwordKey, captchaKey })
     ).toBe('https://example.com/path?x=1');
-    expect(() => decryptEnvelope(envelope, idBytes, { passwordKey })).toThrow(/CAPTCHA key/);
-    expect(() => decryptEnvelope(envelope, idBytes, { captchaKey })).toThrow(/Password key/);
+    expect(() => decryptEnvelope(envelope, idBytes, encryptionKeyMaterial, { passwordKey })).toThrow(/CAPTCHA key/);
+    expect(() => decryptEnvelope(envelope, idBytes, encryptionKeyMaterial, { captchaKey })).toThrow(/Password key/);
+    expect(() =>
+      decryptEnvelope(envelope, idBytes, encryptionKeyMaterial, {
+        passwordKey: new Uint8Array(32).fill(0x40),
+        captchaKey
+      })
+    ).toThrow(IncorrectPasswordError);
   });
 
   it('pads URLs with 0-128 zero bytes on 32-byte boundaries', () => {
@@ -140,17 +128,17 @@ describe('SecURL HKDF-SHA3-256 protocol', () => {
     ] as const;
 
     for (const [choice, expectedPadding] of cases) {
-      const envelope = encryptEnvelope(destination, idBytes, {
+      const envelope = encryptEnvelope(destination, idBytes, encryptionKeyMaterial, {
         ttlSeconds: 3600,
         randomBytes: (length) =>
           length === 1 ? new Uint8Array([choice]) : new Uint8Array(length).fill(0x31)
       });
-      const paddedUrl = openPayloadUrl(envelope, idBytes);
+      const paddedUrl = openPayloadUrl(envelope, idBytes, encryptionKeyMaterial);
 
       expect(paddedUrl).toBe(destination + '\0'.repeat(expectedPadding));
       expect(textEncoder.encode(paddedUrl).length).toBe(32 + expectedPadding);
       expect(textEncoder.encode(paddedUrl).length % 32).toBe(0);
-      expect(decryptEnvelope(envelope, idBytes)).toBe(destination);
+      expect(decryptEnvelope(envelope, idBytes, encryptionKeyMaterial)).toBe(destination);
     }
   });
 
@@ -161,64 +149,66 @@ describe('SecURL HKDF-SHA3-256 protocol', () => {
     const randomBytes = (length: number) =>
       length === 1 ? new Uint8Array([255]) : new Uint8Array(length).fill(0x32);
 
-    const nearMaximumEnvelope = encryptEnvelope(nearMaximum, idBytes, {
+    const nearMaximumEnvelope = encryptEnvelope(nearMaximum, idBytes, encryptionKeyMaterial, {
       ttlSeconds: 3600,
       randomBytes
     });
-    const maximumEnvelope = encryptEnvelope(maximum, idBytes, {
+    const maximumEnvelope = encryptEnvelope(maximum, idBytes, encryptionKeyMaterial, {
       ttlSeconds: 3600,
       randomBytes
     });
-    const paddedNearMaximum = openPayloadUrl(nearMaximumEnvelope, idBytes);
-    const paddedMaximum = openPayloadUrl(maximumEnvelope, idBytes);
+    const paddedNearMaximum = openPayloadUrl(
+      nearMaximumEnvelope,
+      idBytes,
+      encryptionKeyMaterial
+    );
+    const paddedMaximum = openPayloadUrl(maximumEnvelope, idBytes, encryptionKeyMaterial);
 
     expect(textEncoder.encode(paddedNearMaximum)).toHaveLength(4096);
     expect(paddedNearMaximum.slice(nearMaximum.length)).toBe('\0'.repeat(96));
     expect(textEncoder.encode(paddedMaximum)).toHaveLength(4096);
     expect(paddedMaximum).toBe(maximum);
-    expect(decryptEnvelope(nearMaximumEnvelope, idBytes)).toBe(nearMaximum);
-    expect(decryptEnvelope(maximumEnvelope, idBytes)).toBe(maximum);
+    expect(decryptEnvelope(nearMaximumEnvelope, idBytes, encryptionKeyMaterial)).toBe(nearMaximum);
+    expect(decryptEnvelope(maximumEnvelope, idBytes, encryptionKeyMaterial)).toBe(maximum);
     expect(() =>
-      encryptEnvelope(`${maximum}a`, idBytes, { ttlSeconds: 3600, randomBytes })
+      encryptEnvelope(`${maximum}a`, idBytes, encryptionKeyMaterial, { ttlSeconds: 3600, randomBytes })
     ).toThrow(/must not exceed 4096 UTF-8 bytes/);
   });
 
   it('ignores authenticated payload content after the first null byte', () => {
     const destination = 'https://example.com/';
     const metadata = create(EnvelopeMetadataSchema, {
-      protocolVersion: 1,
+      protocolVersion: PROTOCOL_VERSION,
       ttlSeconds: 3600,
       payloadNonce
     });
     const aad = serializeMetadata(metadata);
-    const keyMaterial = deriveEncryptionKeyMaterial(idBytes);
-    const finalKey = deriveFinalKey(keyMaterial, idBytes, payloadNonce);
+    const finalKey = deriveFinalKey(encryptionKeyMaterial, idBytes, payloadNonce);
     const payloadBytes = toBinary(
       PayloadSchema,
       create(PayloadSchema, { url: `${destination}\0ignored` })
     );
     const ciphertext = sealLayer(finalKey, payloadNonce, payloadBytes, aad);
     payloadBytes.fill(0);
-    keyMaterial.fill(0);
     finalKey.fill(0);
 
     const envelope = create(EnvelopeSchema, { metadata, ciphertext });
-    expect(decryptEnvelope(envelope, idBytes)).toBe(destination);
+    expect(decryptEnvelope(envelope, idBytes, encryptionKeyMaterial)).toBe(destination);
   });
 
   it('uses a zero TTL sentinel for envelopes that never expire', () => {
-    const envelope = encryptEnvelope('https://example.com/forever', idBytes, {
+    const envelope = encryptEnvelope('https://example.com/forever', idBytes, encryptionKeyMaterial, {
       ttlSeconds: 0,
       randomBytes: (length) => new Uint8Array(length).fill(0x44)
     });
     expect(envelope.metadata?.ttlSeconds).toBe(0);
-    expect(decryptEnvelope(envelope, idBytes)).toBe('https://example.com/forever');
+    expect(decryptEnvelope(envelope, idBytes, encryptionKeyMaterial)).toBe('https://example.com/forever');
   });
 
   it('fails authentication if metadata AAD is changed', () => {
     const passwordKey = new Uint8Array(32).fill(0x61);
     const captchaKey = new Uint8Array(32).fill(0x62);
-    const original = encryptEnvelope('https://example.com/', idBytes, {
+    const original = encryptEnvelope('https://example.com/', idBytes, encryptionKeyMaterial, {
       ttlSeconds: 3600,
       password: { key: passwordKey, salt: new Uint8Array(16).fill(0x63) },
       captchaKey,
@@ -242,11 +232,11 @@ describe('SecURL HKDF-SHA3-256 protocol', () => {
       ciphertext: original.ciphertext
     });
 
-    expect(() => decryptEnvelope(tampered, idBytes, { passwordKey, captchaKey })).toThrow();
+    expect(() => decryptEnvelope(tampered, idBytes, encryptionKeyMaterial, { passwordKey, captchaKey })).toThrow();
   });
 
   it('rejects non-protocol key and nonce lengths', () => {
-    expect(() => deriveStorageKey(new Uint8Array(7), 'example.com')).toThrow(/8 bytes/);
+    expect(() => deriveLinkKeys(new Uint8Array(31), 'example.com')).toThrow(/32 bytes/);
     expect(() => deriveFinalKey(new Uint8Array(31), idBytes, payloadNonce)).toThrow(/32 bytes/);
     expect(() => deriveFinalKey(new Uint8Array(32), idBytes, new Uint8Array(23))).toThrow(/24 bytes/);
   });

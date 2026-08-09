@@ -72,7 +72,7 @@ func (service *Service) Access(
 	if captchaEnabled {
 		captchaKey, err = service.wrapper.Unwrap(
 			storageKey,
-			1,
+			2,
 			record.CaptchaKeyNonce,
 			record.CaptchaKeyCiphertext,
 		)

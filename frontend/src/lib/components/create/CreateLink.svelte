@@ -9,10 +9,10 @@
   import { encodeId, generateIdBytes } from '$lib/crypto/id';
   import { derivePasswordKeyInWorker } from '$lib/crypto/password';
   import {
-    deriveStorageKey,
     encryptEnvelope,
     type PasswordEncryptionLayer
   } from '$lib/crypto/protocol';
+  import { deriveRootLinkKeysInWorker } from '$lib/crypto/root-key';
   import { CreateEnvelopeRequestSchema, type CreateEnvelopeRequest, type RuntimeConfig } from '$lib/gen/securl/v1/api_pb.js';
   import { normalizeServiceDomain } from '$lib/security/domain';
   import { validateDestination } from '$lib/security/url';
@@ -79,29 +79,34 @@
     if (buildCount === 1) state = 'encrypting';
     const idBytes = generateIdBytes();
     const encodedId = encodeId(idBytes);
-    const storageKey = deriveStorageKey(idBytes, serviceDomain);
+    const keys = await deriveRootLinkKeysInWorker(idBytes, serviceDomain, controller.signal);
     let passwordLayer: PasswordEncryptionLayer | undefined;
     let passwordKey: Uint8Array | undefined;
-    if (passwordEnabled) {
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      passwordKey = await derivePasswordKeyInWorker(password, salt, controller.signal);
-      passwordLayer = { key: passwordKey, salt };
-    }
-    const captchaKey = captchaEnabled
-      ? crypto.getRandomValues(new Uint8Array(32))
-      : undefined;
     try {
-      const envelope = encryptEnvelope(canonicalUrl.href, idBytes, {
-        ttlSeconds,
-        password: passwordLayer,
-        captchaKey,
-        burnAfterRead
-      });
+      if (passwordEnabled) {
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        passwordKey = await derivePasswordKeyInWorker(password, salt, controller.signal);
+        passwordLayer = { key: passwordKey, salt };
+      }
+      const captchaKey = captchaEnabled
+        ? crypto.getRandomValues(new Uint8Array(32))
+        : undefined;
+      const envelope = encryptEnvelope(
+        canonicalUrl.href,
+        idBytes,
+        keys.encryptionKeyMaterial,
+        {
+          ttlSeconds,
+          password: passwordLayer,
+          captchaKey,
+          burnAfterRead
+        }
+      );
       return {
         idBytes,
         encodedId,
         request: create(CreateEnvelopeRequestSchema, {
-          storageKey,
+          storageKey: keys.storageKey,
           envelope,
           captchaKey: captchaKey ?? new Uint8Array(),
           captchaToken: createCaptchaToken
@@ -109,6 +114,7 @@
       };
     } finally {
       passwordKey?.fill(0);
+      keys.encryptionKeyMaterial.fill(0);
     }
   }
 

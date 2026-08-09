@@ -139,7 +139,7 @@ test('creator CAPTCHA retries after the provider script fails to load', async ({
   await expect(page.getByRole('heading', { name: 'Protected link ready' })).toBeVisible();
 });
 
-test('clean lookup redirects only after the five-second gate and leaks no fragment or plaintext', async ({
+test('clean lookup runs in the final second and redirects immediately without leaking secrets', async ({
   page,
   context
 }) => {
@@ -158,22 +158,39 @@ test('clean lookup redirects only after the five-second gate and leaks no fragme
   expect(createRequest.captchaToken).toBe('e2e-token');
 
   const openPage = await context.newPage();
-  let scanCompletedAt = 0;
+  let scanRequestedAt = 0;
   let destinationRequestedAt = 0;
+  await openPage.route('**/api/v1/envelopes/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, request.url().endsWith('/metadata') ? 700 : 1200);
+      await promise;
+    }
+    await route.continue();
+  });
   await openPage.route(safeLookupPattern, async (route) => {
-    scanCompletedAt = Date.now();
+    scanRequestedAt = Date.now();
     await route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: lookupResponse() });
   });
   await openPage.route(destination, async (route) => {
     destinationRequestedAt = Date.now();
     await route.fulfill({ status: 200, contentType: 'text/html', body: '<title>clean destination</title>' });
   });
+  const navigationStartedAt = Date.now();
   await openPage.goto(link);
   await expect(openPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible();
-  await openPage.waitForTimeout(4500);
+  await expect(openPage.getByText('Decrypting destination…')).toBeVisible();
+  await expect(openPage.locator('code.hostname')).toHaveText('example.com');
+  const remainingBeforeScanBoundary = 3500 - (Date.now() - navigationStartedAt);
+  if (remainingBeforeScanBoundary > 0) await openPage.waitForTimeout(remainingBeforeScanBoundary);
   expect(openPage.url()).toBe(link);
+  expect(scanRequestedAt).toBe(0);
   await expect(openPage).toHaveURL(destination, { timeout: 3000 });
-  expect(destinationRequestedAt - scanCompletedAt).toBeGreaterThanOrEqual(4800);
+  expect(scanRequestedAt - navigationStartedAt).toBeGreaterThanOrEqual(3800);
+  expect(scanRequestedAt - navigationStartedAt).toBeLessThan(5000);
+  expect(destinationRequestedAt).toBeGreaterThanOrEqual(scanRequestedAt);
+  expect(destinationRequestedAt - scanRequestedAt).toBeLessThan(1000);
 });
 
 test('New link leaves the open-link state and returns to the creator', async ({ page, context }) => {
@@ -189,6 +206,65 @@ test('New link leaves the open-link state and returns to the creator', async ({ 
   await expect(openPage).toHaveURL('/');
   await expect(openPage.getByRole('heading', { name: 'Create a protected link' })).toBeVisible();
   await expect(openPage.getByRole('heading', { name: 'Open a protected link' })).toHaveCount(0);
+});
+
+test('wrong password retries locally without refetching a non-burn envelope', async ({ page, context }) => {
+  const destination = 'https://example.com/password-retry';
+  const password = 'local-retry-password';
+  const { link } = await createProtectedLink(page, destination, { password });
+  const openPage = await context.newPage();
+  let envelopeRequests = 0;
+  openPage.on('request', (request) => {
+    if (
+      request.method() === 'GET' &&
+      request.url().includes('/api/v1/envelopes/') &&
+      !request.url().endsWith('/metadata')
+    ) {
+      envelopeRequests += 1;
+    }
+  });
+
+  await openPage.goto(link);
+  await expect(openPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
+  await openPage.getByLabel('Password', { exact: true }).fill('wrong password');
+  await openPage.getByRole('button', { name: 'Continue' }).click();
+  await expect(openPage.getByRole('alert')).toHaveText('Incorrect password. Try again.');
+  expect(envelopeRequests).toBe(1);
+
+  await openPage.getByLabel('Password', { exact: true }).fill(password);
+  await openPage.getByRole('button', { name: 'Continue' }).click();
+  await expect(openPage.locator('code.hostname')).toHaveText('example.com', { timeout: 20_000 });
+  expect(envelopeRequests).toBe(1);
+});
+
+test('password KDF failure does not consume a burn-after-read link', async ({ page, context }) => {
+  const password = 'burn-after-read-password';
+  const { link } = await createProtectedLink(page, 'https://example.com/burn-after-read', {
+    password,
+    burn: true
+  });
+  const failingPage = await context.newPage();
+  let accessRequests = 0;
+  failingPage.on('request', (request) => {
+    if (request.url().endsWith('/access')) accessRequests += 1;
+  });
+  await failingPage.route('**/password.worker-*.js', (route) => route.abort('failed'));
+
+  await failingPage.goto(link);
+  await expect(failingPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
+  await failingPage.getByLabel('Password', { exact: true }).fill(password);
+  await failingPage.getByRole('button', { name: 'Continue' }).click();
+  await expect(failingPage.getByRole('heading', { name: 'Unable to open this link' })).toBeVisible();
+  expect(accessRequests).toBe(0);
+
+  const retryPage = await context.newPage();
+  await retryPage.goto(link);
+  await expect(retryPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
+  await retryPage.getByLabel('Password', { exact: true }).fill(password);
+  await retryPage.getByRole('button', { name: 'Continue' }).click();
+  await expect(retryPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible({
+    timeout: 20_000
+  });
 });
 
 test('changing between non-empty fragments opens the new protected link', async ({ page, context }) => {
@@ -253,6 +329,33 @@ test('manual choice skips the delay but still waits for a clean safety check', a
   expect(Date.now() - startedAt).toBeLessThan(2000);
 });
 
+test('immediate open bypasses the delay before the scheduled scan starts', async ({ page, context }) => {
+  const destination = 'https://example.com/open-without-scanning';
+  const { link } = await createProtectedLink(page, destination);
+  const openPage = await context.newPage();
+  let lookupRequests = 0;
+  await openPage.route(safeLookupPattern, async (route) => {
+    lookupRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/x-protobuf',
+      body: lookupResponse()
+    });
+  });
+  await openPage.route(destination, (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<title>unscanned destination</title>' })
+  );
+
+  await openPage.goto(link);
+  await expect(openPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible();
+  await expect(openPage.locator('code.hostname')).toHaveText('example.com');
+  const startedAt = Date.now();
+  await openPage.getByRole('button', { name: 'Open without scanning' }).click();
+  await expect(openPage).toHaveURL(destination, { timeout: 3000 });
+  expect(Date.now() - startedAt).toBeLessThan(2000);
+  expect(lookupRequests).toBe(0);
+});
+
 test('threat response blocks every redirect', async ({ page, context }) => {
   const destination = 'https://example.com/clean?a=1';
   const { link } = await createProtectedLink(page, destination);
@@ -271,7 +374,9 @@ test('threat response blocks every redirect', async ({ page, context }) => {
     await route.abort();
   });
   await openPage.goto(link);
-  await expect(openPage.getByRole('heading', { name: 'Deceptive site ahead' })).toBeVisible();
+  await expect(openPage.getByRole('heading', { name: 'Deceptive site ahead' })).toBeVisible({
+    timeout: 7000
+  });
   await openPage.waitForTimeout(5500);
   expect(openPage.url()).toBe(link);
   expect(destinationRequests).toBe(0);
@@ -288,14 +393,16 @@ test('503 remains gated until explicit unscanned choice', async ({ page, context
     route.fulfill({ status: 200, contentType: 'text/html', body: '<title>unscanned destination</title>' })
   );
   await openPage.goto(link);
-  await expect(openPage.getByRole('heading', { name: 'Safety check unavailable' })).toBeVisible();
+  await expect(openPage.getByRole('heading', { name: 'Safety check unavailable' })).toBeVisible({
+    timeout: 7000
+  });
   await openPage.waitForTimeout(5200);
   expect(openPage.url()).toBe(link);
   await openPage.getByRole('button', { name: 'Open without safety check' }).click();
   await expect(openPage).toHaveURL(destination);
 });
 
-test('password, CAPTCHA mock, and burn consume the link exactly once', async ({ page, context }) => {
+test('only the first burn-link client can retry a wrong password locally', async ({ page, context }) => {
   const destination = 'https://example.com/protected';
   const password = 'correct horse battery staple';
   const { link } = await createProtectedLink(page, destination, {
@@ -308,18 +415,30 @@ test('password, CAPTCHA mock, and burn consume the link exactly once', async ({ 
   await openPage.route(safeLookupPattern, (route) =>
     route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: lookupResponse() })
   );
+  let accessRequests = 0;
+  openPage.on('request', (request) => {
+    if (request.url().endsWith('/access')) accessRequests += 1;
+  });
   await openPage.goto(link);
   await expect(openPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
+  await openPage.getByLabel('Password', { exact: true }).fill('wrong password');
+  const consumed = openPage.waitForResponse(
+    (response) =>
+      response.url().endsWith('/access') &&
+      response.request().method() === 'POST' &&
+      response.status() === 200
+  );
+  await openPage.getByRole('button', { name: 'Continue' }).click();
+  await consumed;
+  await expect(openPage.getByRole('alert')).toHaveText('Incorrect password. Try again.');
+  expect(accessRequests).toBe(1);
+
   await openPage.getByLabel('Password', { exact: true }).fill(password);
   await openPage.getByRole('button', { name: 'Continue' }).click();
-  await expect(openPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible({
-    timeout: 20_000
-  });
+  await expect(openPage.locator('code.hostname')).toHaveText('example.com', { timeout: 20_000 });
+  expect(accessRequests).toBe(1);
 
-  const missingMetadata = openPage.waitForResponse(
-    (response) => response.url().includes('/metadata') && response.status() === 404
-  );
-  await openPage.reload();
-  await missingMetadata;
-  await expect(openPage.getByText('This link is no longer available.')).toBeVisible();
+  const secondClient = await context.newPage();
+  await secondClient.goto(link);
+  await expect(secondClient.getByText('This link is no longer available.')).toBeVisible();
 });

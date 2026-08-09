@@ -52,7 +52,7 @@ func (wrapper *KeyWrapper) Wrap(
 	protocolVersion uint32,
 	captchaKey []byte,
 ) ([]byte, []byte, error) {
-	if wrapper == nil || wrapper.aead == nil || len(captchaKey) != 32 || protocolVersion != 1 {
+	if wrapper == nil || wrapper.aead == nil || len(captchaKey) != 32 || protocolVersion != 2 {
 		return nil, nil, ErrInvalidWrappedKey
 	}
 	nonce := make([]byte, wrapper.aead.NonceSize())
@@ -69,7 +69,7 @@ func (wrapper *KeyWrapper) Unwrap(
 	nonce []byte,
 	ciphertext []byte,
 ) ([]byte, error) {
-	if wrapper == nil || wrapper.aead == nil || len(nonce) != wrapper.aead.NonceSize() || protocolVersion != 1 {
+	if wrapper == nil || wrapper.aead == nil || len(nonce) != wrapper.aead.NonceSize() || protocolVersion != 2 {
 		return nil, ErrInvalidWrappedKey
 	}
 	plaintext, err := wrapper.aead.Open(nil, nonce, ciphertext, wrapAAD(storageKey, protocolVersion))

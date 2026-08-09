@@ -35,7 +35,7 @@ func protectedRecord(
 	var storageKey [32]byte
 	storageKey[0] = byte(flags + 20)
 	metadata := &securlv1.EnvelopeMetadata{
-		ProtocolVersion: 1,
+		ProtocolVersion: 2,
 		FeatureFlags:    flags,
 		TtlSeconds:      3600,
 		PayloadNonce:    bytes.Repeat([]byte{1}, 24),
@@ -45,7 +45,7 @@ func protectedRecord(
 	if flags&accessservice.CaptchaFlag != 0 {
 		metadata.Captcha = &securlv1.CaptchaLayer{Nonce: bytes.Repeat([]byte{2}, 24)}
 		captchaKey = bytes.Repeat([]byte{3}, 32)
-		nonce, ciphertext, err = wrapper.Wrap(storageKey, 1, captchaKey)
+		nonce, ciphertext, err = wrapper.Wrap(storageKey, 2, captchaKey)
 		if err != nil {
 			t.Fatal(err)
 		}

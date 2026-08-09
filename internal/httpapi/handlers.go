@@ -49,7 +49,7 @@ func (handler *api) getConfig(writer http.ResponseWriter, request *http.Request,
 }
 
 func validateMetadata(metadata *securlv1.EnvelopeMetadata, allowedTTLs map[uint32]struct{}) error {
-	if metadata == nil || metadata.ProtocolVersion != 1 ||
+	if metadata == nil || metadata.ProtocolVersion != 2 ||
 		metadata.FeatureFlags&^knownFeatureFlags != 0 || len(metadata.PayloadNonce) != 24 {
 		return store.ErrInvalid
 	}

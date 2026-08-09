@@ -16,14 +16,14 @@ func TestKeyWrapperRoundTripBindsStorageKeyAndVersion(t *testing.T) {
 	var storageKey [32]byte
 	storageKey[0] = 1
 	captchaKey := bytes.Repeat([]byte{0x42}, 32)
-	nonce, ciphertext, err := wrapper.Wrap(storageKey, 1, captchaKey)
+	nonce, ciphertext, err := wrapper.Wrap(storageKey, 2, captchaKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(nonce) != 12 || len(ciphertext) != 48 {
 		t.Fatalf("nonce=%d ciphertext=%d", len(nonce), len(ciphertext))
 	}
-	plaintext, err := wrapper.Unwrap(storageKey, 1, nonce, ciphertext)
+	plaintext, err := wrapper.Unwrap(storageKey, 2, nonce, ciphertext)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,10 +36,10 @@ func TestKeyWrapperRoundTripBindsStorageKeyAndVersion(t *testing.T) {
 
 	wrongStorageKey := storageKey
 	wrongStorageKey[0] = 2
-	if _, err := wrapper.Unwrap(wrongStorageKey, 1, nonce, ciphertext); !errors.Is(err, ErrInvalidWrappedKey) {
+	if _, err := wrapper.Unwrap(wrongStorageKey, 2, nonce, ciphertext); !errors.Is(err, ErrInvalidWrappedKey) {
 		t.Fatalf("wrong storage key error = %v", err)
 	}
-	if _, err := wrapper.Unwrap(storageKey, 2, nonce, ciphertext); !errors.Is(err, ErrInvalidWrappedKey) {
+	if _, err := wrapper.Unwrap(storageKey, 1, nonce, ciphertext); !errors.Is(err, ErrInvalidWrappedKey) {
 		t.Fatalf("wrong version error = %v", err)
 	}
 }

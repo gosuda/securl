@@ -21,7 +21,7 @@ func storedEnvelope(t testing.TB, repository store.Repository, flags uint32) ([3
 	var storageKey [32]byte
 	storageKey[0] = byte(flags + 1)
 	metadata := &securlv1.EnvelopeMetadata{
-		ProtocolVersion: 1,
+		ProtocolVersion: 2,
 		FeatureFlags:    flags,
 		TtlSeconds:      3600,
 		PayloadNonce:    bytes.Repeat([]byte{1}, 24),
