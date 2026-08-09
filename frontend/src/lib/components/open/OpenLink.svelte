@@ -2,14 +2,14 @@
   import { afterUpdate, onDestroy, onMount } from 'svelte';
   import { accessEnvelope, getEnvelope, getEnvelopeMetadata, getRuntimeConfig } from '$lib/api/client';
   import { parseFragment } from '$lib/crypto/id';
-  import { derivePasswordKeyInWorker } from '$lib/crypto/password';
+  import { derivePasswordKey } from '$lib/crypto/password';
   import {
     IncorrectPasswordError,
     decryptEnvelope,
     encodeStorageKey,
     validateEnvelopeMetadata
   } from '$lib/crypto/protocol';
-  import { deriveRootLinkKeysInWorker } from '$lib/crypto/root-key';
+  import { deriveRootLinkKeys } from '$lib/crypto/root-key';
   import { FeatureFlag, type Envelope, type EnvelopeMetadata } from '$lib/gen/securl/v1/envelope_pb.js';
   import { CaptchaProvider, type RuntimeConfig } from '$lib/gen/securl/v1/api_pb.js';
   import { normalizeServiceDomain } from '$lib/security/domain';
@@ -65,7 +65,7 @@
       state = 'metadata';
       const [runtimeConfig, keys] = await Promise.all([
         getRuntimeConfig(controller.signal),
-        deriveRootLinkKeysInWorker(idBytes, serviceDomain, controller.signal)
+        deriveRootLinkKeys(idBytes, serviceDomain, controller.signal)
       ]);
       storageKey = encodeStorageKey(keys.storageKey);
       keys.storageKey.fill(0);
@@ -148,7 +148,7 @@
     let passwordKey: Uint8Array | undefined;
     try {
       const passwordKeyPromise = passwordEnabled
-        ? derivePasswordKeyInWorker(password, metadata.password!.salt, controller.signal)
+        ? derivePasswordKey(password, metadata.password!.salt, controller.signal)
         : Promise.resolve(undefined);
       password = '';
 

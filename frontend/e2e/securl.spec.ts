@@ -237,34 +237,27 @@ test('wrong password retries locally without refetching a non-burn envelope', as
   expect(envelopeRequests).toBe(1);
 });
 
-test('password KDF failure does not consume a burn-after-read link', async ({ page, context }) => {
+test('password worker load failure falls back before burn access', async ({ page, context }) => {
   const password = 'burn-after-read-password';
   const { link } = await createProtectedLink(page, 'https://example.com/burn-after-read', {
     password,
     burn: true
   });
-  const failingPage = await context.newPage();
+  const fallbackPage = await context.newPage();
   let accessRequests = 0;
-  failingPage.on('request', (request) => {
+  fallbackPage.on('request', (request) => {
     if (request.url().endsWith('/access')) accessRequests += 1;
   });
-  await failingPage.route('**/password.worker-*.js', (route) => route.abort('failed'));
+  await fallbackPage.route('**/workers/password.worker-*.js', (route) => route.abort('failed'));
 
-  await failingPage.goto(link);
-  await expect(failingPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
-  await failingPage.getByLabel('Password', { exact: true }).fill(password);
-  await failingPage.getByRole('button', { name: 'Continue' }).click();
-  await expect(failingPage.getByRole('heading', { name: 'Unable to open this link' })).toBeVisible();
-  expect(accessRequests).toBe(0);
-
-  const retryPage = await context.newPage();
-  await retryPage.goto(link);
-  await expect(retryPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
-  await retryPage.getByLabel('Password', { exact: true }).fill(password);
-  await retryPage.getByRole('button', { name: 'Continue' }).click();
-  await expect(retryPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible({
+  await fallbackPage.goto(link);
+  await expect(fallbackPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
+  await fallbackPage.getByLabel('Password', { exact: true }).fill(password);
+  await fallbackPage.getByRole('button', { name: 'Continue' }).click();
+  await expect(fallbackPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible({
     timeout: 20_000
   });
+  expect(accessRequests).toBe(1);
 });
 
 test('changing between non-empty fragments opens the new protected link', async ({ page, context }) => {

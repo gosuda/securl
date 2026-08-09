@@ -7,12 +7,12 @@
     createWithCollisionRetries
   } from '$lib/api/create';
   import { encodeId, generateIdBytes } from '$lib/crypto/id';
-  import { derivePasswordKeyInWorker } from '$lib/crypto/password';
+  import { derivePasswordKey } from '$lib/crypto/password';
   import {
     encryptEnvelope,
     type PasswordEncryptionLayer
   } from '$lib/crypto/protocol';
-  import { deriveRootLinkKeysInWorker } from '$lib/crypto/root-key';
+  import { deriveRootLinkKeys } from '$lib/crypto/root-key';
   import { CreateEnvelopeRequestSchema, type CreateEnvelopeRequest, type RuntimeConfig } from '$lib/gen/securl/v1/api_pb.js';
   import { normalizeServiceDomain } from '$lib/security/domain';
   import { validateDestination } from '$lib/security/url';
@@ -79,13 +79,13 @@
     if (buildCount === 1) state = 'encrypting';
     const idBytes = generateIdBytes();
     const encodedId = encodeId(idBytes);
-    const keys = await deriveRootLinkKeysInWorker(idBytes, serviceDomain, controller.signal);
+    const keys = await deriveRootLinkKeys(idBytes, serviceDomain, controller.signal);
     let passwordLayer: PasswordEncryptionLayer | undefined;
     let passwordKey: Uint8Array | undefined;
     try {
       if (passwordEnabled) {
         const salt = crypto.getRandomValues(new Uint8Array(16));
-        passwordKey = await derivePasswordKeyInWorker(password, salt, controller.signal);
+        passwordKey = await derivePasswordKey(password, salt, controller.signal);
         passwordLayer = { key: passwordKey, salt };
       }
       const captchaKey = captchaEnabled
