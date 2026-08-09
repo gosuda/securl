@@ -26,6 +26,8 @@
     | 'terminal-error';
   type Gate = 'captcha' | 'password' | 'none';
 
+  export let fragment: string;
+
   const controller = new AbortController();
   let state: OpenState = 'parsing';
   let gate: Gate = 'none';
@@ -47,7 +49,7 @@
   onMount(async () => {
     try {
       state = 'parsing';
-      idBytes = parseFragment(window.location.hash);
+      idBytes = parseFragment(fragment);
       const serviceDomain = normalizeServiceDomain(window.location.hostname);
       storageKey = encodeStorageKey(deriveStorageKey(idBytes, serviceDomain));
       state = 'metadata';

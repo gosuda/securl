@@ -191,6 +191,37 @@ test('New link leaves the open-link state and returns to the creator', async ({ 
   await expect(openPage.getByRole('heading', { name: 'Open a protected link' })).toHaveCount(0);
 });
 
+test('changing between non-empty fragments opens the new protected link', async ({ page, context }) => {
+  const firstPassword = 'first-fragment-password';
+  const secondPassword = 'second-fragment-password';
+  const first = await createProtectedLink(page, 'https://example.com/first-fragment', {
+    password: firstPassword
+  });
+  const second = await createProtectedLink(page, 'https://example.com/second-fragment', {
+    password: secondPassword
+  });
+  const openPage = await context.newPage();
+  const metadataRequests: string[] = [];
+  openPage.on('request', (request) => {
+    if (request.url().endsWith('/metadata')) metadataRequests.push(request.url());
+  });
+
+  await openPage.goto(first.link);
+  await expect(openPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
+  await expect.poll(() => metadataRequests.length).toBe(1);
+  await openPage.evaluate((hash) => {
+    window.location.hash = hash;
+  }, new URL(second.link).hash);
+  await expect.poll(() => metadataRequests.length).toBe(2);
+  expect(metadataRequests[1]).not.toBe(metadataRequests[0]);
+
+  await openPage.getByLabel('Password', { exact: true }).fill(secondPassword);
+  await openPage.getByRole('button', { name: 'Continue' }).click();
+  await expect(openPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible({
+    timeout: 20_000
+  });
+});
+
 
 test('forever TTL is encoded as zero and creates a non-expiring link', async ({ page }) => {
   const { requestBody } = await createProtectedLink(page, 'https://example.com/forever', { ttl: 0 });

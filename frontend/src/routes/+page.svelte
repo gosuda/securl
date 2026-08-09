@@ -5,12 +5,25 @@
   import OpenLink from '$lib/components/open/OpenLink.svelte';
 
   let mounted = false;
+  let fragment = '';
   let hasFragment = false;
 
-  $: hasFragment = mounted && $page.url.hash.length > 1;
+  $: hasFragment = mounted && fragment.length > 1;
 
   onMount(() => {
+    const syncFragment = () => {
+      fragment = window.location.hash;
+    };
+    const unsubscribe = page.subscribe((currentPage) => {
+      fragment = currentPage.url.hash;
+    });
+    syncFragment();
+    window.addEventListener('hashchange', syncFragment);
     mounted = true;
+    return () => {
+      unsubscribe();
+      window.removeEventListener('hashchange', syncFragment);
+    };
   });
 </script>
 
@@ -22,7 +35,9 @@
     </div>
   </main>
 {:else if hasFragment}
-  <OpenLink />
+  {#key fragment}
+    <OpenLink {fragment} />
+  {/key}
 {:else}
   <CreateLink />
 {/if}
