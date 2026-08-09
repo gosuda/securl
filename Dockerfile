@@ -25,4 +25,6 @@ COPY --from=backend --chown=nonroot:nonroot /out/securl /securl
 USER nonroot:nonroot
 EXPOSE 8080
 ENV SECURL_HTTP_ADDR=:8080
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["/securl", "healthcheck"]
 ENTRYPOINT ["/securl"]

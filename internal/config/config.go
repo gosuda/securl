@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 const maxTTL = 720 * time.Hour
 
 type Config struct {
+	HTTPNetwork              string
 	HTTPAddr                 string
 	PublicOrigins            map[string]struct{}
 	StoreBackend             string
@@ -54,13 +56,20 @@ func Load() (Config, error) {
 	return parseConfig(os.LookupEnv)
 }
 
-// resolveHTTPAddr follows github.com/lemon-mint/envaddr semantics: PORT enables
-// PaaS address discovery, HOST supplies the bind host, and a valid IP overrides
-// HOST. Without PORT, the explicit SecURL address remains unchanged.
-func resolveHTTPAddr(defaultAddr string, lookup func(string) (string, bool)) string {
+// resolveHTTPListener accepts unix:/absolute/path for Unix sockets. Explicit
+// Unix sockets take precedence over PaaS PORT discovery; TCP addresses retain
+// github.com/lemon-mint/envaddr-compatible PORT, HOST, and IP semantics.
+func resolveHTTPListener(defaultAddr string, lookup func(string) (string, bool)) (string, string, error) {
+	if strings.HasPrefix(defaultAddr, "unix:") {
+		address := strings.TrimPrefix(defaultAddr, "unix:")
+		if !filepath.IsAbs(address) {
+			return "", "", errors.New("Unix socket path must be absolute")
+		}
+		return "unix", address, nil
+	}
 	port, portFound := lookup("PORT")
 	if !portFound {
-		return defaultAddr
+		return "tcp", defaultAddr, nil
 	}
 	host, _ := lookup("HOST")
 	if configuredIP, ok := lookup("IP"); ok {
@@ -72,7 +81,7 @@ func resolveHTTPAddr(defaultAddr string, lookup func(string) (string, bool)) str
 			}
 		}
 	}
-	return host + ":" + port
+	return "tcp", host + ":" + port, nil
 }
 
 func parseConfig(lookup func(string) (string, bool)) (Config, error) {
@@ -82,8 +91,13 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 		}
 		return fallback
 	}
+	httpNetwork, httpAddr, err := resolveHTTPListener(value("SECURL_HTTP_ADDR", ":8080"), lookup)
+	if err != nil {
+		return Config{}, fmt.Errorf("SECURL_HTTP_ADDR: %w", err)
+	}
 	config := Config{
-		HTTPAddr:           resolveHTTPAddr(value("SECURL_HTTP_ADDR", ":8080"), lookup),
+		HTTPNetwork:        httpNetwork,
+		HTTPAddr:           httpAddr,
 		StoreBackend:       value("SECURL_STORE_BACKEND", "memory"),
 		PostgresURL:        value("SECURL_POSTGRES_URL", ""),
 		MariaDBDSN:         value("SECURL_MARIADB_DSN", ""),
@@ -94,7 +108,6 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 		SafeBrowsingAPIKey: value("SECURL_SAFE_BROWSING_API_KEY", ""),
 		MaxURLBytes:        4096,
 	}
-	var err error
 	if config.PublicOrigins, err = parseOrigins(value("SECURL_PUBLIC_ORIGINS", "http://localhost:8080")); err != nil {
 		return Config{}, fmt.Errorf("SECURL_PUBLIC_ORIGINS: %w", err)
 	}

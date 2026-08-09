@@ -1,11 +1,11 @@
 package httpapi
 
 import (
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/rs/zerolog"
 
 	securlv1 "securl.click/securl/gen/go/securl/v1"
 	"securl.click/securl/internal/store/memory"
@@ -22,8 +22,13 @@ func middlewareRouter(frontend http.Handler, enableHSTS bool) http.Handler {
 		PublicOrigins:      map[string]struct{}{"https://securl.example": {}, "https://securl-alt.example": {}},
 		CORSAllowedOrigins: map[string]struct{}{"https://app.example": {}},
 		EnableHSTS:         enableHSTS,
-		Logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:             nopLogger(),
 	})
+}
+
+func nopLogger() *zerolog.Logger {
+	logger := zerolog.Nop()
+	return &logger
 }
 
 func TestAllowedCORSPreflightUsesExactPolicyWithoutCredentials(t *testing.T) {

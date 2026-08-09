@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"io"
-	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	securlv1 "securl.click/securl/gen/go/securl/v1"
 	accessservice "securl.click/securl/internal/access"
@@ -38,7 +39,7 @@ func (cleanLookup) Lookup(context.Context, [][4]byte) (safebrowsing.LookupResult
 
 func main() {
 	const origin = "http://127.0.0.1:4179"
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := zerolog.Nop()
 	repository := memory.New()
 	verifier := captchaVerifier{}
 	wrapper, err := captcha.NewKeyWrapper(base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
@@ -72,9 +73,14 @@ func main() {
 		MaxEnvelopeBytes: 16384,
 		Frontend:         frontendHandler,
 		PublicOrigins:    map[string]struct{}{origin: {}},
-		Logger:           logger,
+		Logger:           &logger,
 	})
-	server := httpapi.NewServer("127.0.0.1:4179", router)
+	listener, err := net.Listen("tcp", "127.0.0.1:4179")
+	if err != nil {
+		panic(err)
+	}
+	defer listener.Close()
+	server := httpapi.NewServer(router, &logger)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
@@ -83,7 +89,7 @@ func main() {
 		defer cancel()
 		_ = server.Shutdown(shutdownContext)
 	}()
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		panic(err)
 	}
 	repository.Close()

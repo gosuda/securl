@@ -16,8 +16,8 @@ Durations use Go duration syntax such as `3s`, `1m`, `24h`, or `720h`. Boolean v
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SECURL_HTTP_ADDR` | `:8080` | Fallback TCP listen address used when `PORT` is unset. Use `127.0.0.1:8080` to bind only to loopback. |
-| `PORT` | unset | PaaS-provided listen port. When present, overrides `SECURL_HTTP_ADDR` and activates `HOST`/`IP` discovery. |
+| `SECURL_HTTP_ADDR` | `:8080` | TCP listen address, or an absolute Unix socket path prefixed with `unix:`, such as `unix:/tmp/securl.sock`. Use `127.0.0.1:8080` to bind TCP only to loopback. |
+| `PORT` | unset | PaaS-provided TCP listen port. When present, overrides TCP values in `SECURL_HTTP_ADDR` and activates `HOST`/`IP` discovery. An explicit `unix:` address takes precedence. |
 | `HOST` | unset | Bind hostname or address used with `PORT`. Empty or unset produces `:PORT`. |
 | `IP` | unset | Optional bind IP used with `PORT`. A valid IPv4 or IPv6 value overrides `HOST`; IPv6 is bracketed automatically. |
 | `SECURL_PUBLIC_ORIGINS` | `http://localhost:8080` | Comma-separated first-party SecURL origins accepted by origin checks. Include every public origin that serves this instance. |
@@ -29,7 +29,7 @@ Durations use Go duration syntax such as `3s`, `1m`, `24h`, or `720h`. Boolean v
 | `SECURL_MAX_ENVELOPE_BYTES` | `16384` | Maximum accepted serialized encrypted envelope size in bytes. Must be a positive integer. |
 | `SECURL_ENABLE_HSTS` | `false` | Adds `Strict-Transport-Security: max-age=31536000`. Enable only when the public service is consistently available over HTTPS. |
 
-Listen-address precedence follows [`github.com/lemon-mint/envaddr`](https://github.com/lemon-mint/envaddr): if `PORT` is present, SecURL listens on `[IP or HOST]:PORT`; a valid `IP` overrides `HOST`. If `PORT` is absent, `SECURL_HTTP_ADDR` is used, falling back to `:8080`. `PORT` controls only the local bind address—PaaS deployments must still set `SECURL_PUBLIC_ORIGINS` to their public HTTPS origin.
+For TCP listeners, address precedence follows [`github.com/lemon-mint/envaddr`](https://github.com/lemon-mint/envaddr): if `PORT` is present, SecURL listens on `[IP or HOST]:PORT`; a valid `IP` overrides `HOST`. If `PORT` is absent, `SECURL_HTTP_ADDR` is used, falling back to `:8080`. An explicit `SECURL_HTTP_ADDR=unix:/absolute/path.sock` selects a Unix socket even when `PORT` is present; the parent directory must be writable by the SecURL process. Listener selection controls only the local bind address—deployments must still set `SECURL_PUBLIC_ORIGINS` to their public HTTP(S) origin.
 
 ### Link lifetime and cleanup
 
@@ -155,10 +155,25 @@ Set `SECURL_STORE_BACKEND=mariadb` and `SECURL_MARIADB_DSN` to a go-sql-driver D
 
 ```sh
 docker build -t securl .
-docker run --rm --env-file .env -p 8080:8080 securl
+docker run --rm --stop-timeout 10 --env-file .env -p 8080:8080 securl
 ```
 
-The final image is distroless, runs as `nonroot`, and contains one statically linked SecURL binary with the frontend embedded.
+The final image is distroless, runs as `nonroot`, declares `STOPSIGNAL SIGTERM`, and contains one statically linked SecURL binary with the frontend embedded. SecURL uses a single 8-second shutdown budget for HTTP draining, cleanup-worker cancellation, and repository closure. Remaining HTTP connections are forcibly closed after the drain timeout, but Go does not join their handler goroutines; if HTTP draining or worker shutdown times out, `Application.Serve` returns an error within the budget while background cleanup waits for every tracked handler and the worker to finish before closing the repository. A repository close started on the safe path may also finish in the background if the driver blocks past the budget. This stays below Docker's 10-second Linux stop timeout; deployments overriding it should keep at least 10 seconds (`--stop-timeout 10` or Compose `stop_grace_period: 10s`). Because the runtime image has no shell, `curl`, or `wget`, Docker runs the binary itself in exec-form health-check mode: `/securl healthcheck`.
+
+## Embedding
+
+The root `securl.click/securl` package loads configuration without opening network or storage resources. The embedding process owns the listener and passes it to `Application.Serve`, which allows socket activation, test listeners, or a host application's existing network setup:
+
+```go
+application, err := securl.New(logger)
+listener, err := net.Listen(application.ListenNetwork(), application.ListenAddress())
+err = application.Serve(ctx, listener)
+
+// Probe the listener actually supplied by the embedding process.
+err = securl.CheckHealth(ctx, listener.Addr().Network(), listener.Addr().String())
+```
+
+The standalone command follows the same path: `cmd/securl/main.go` binds the listener and delegates the application lifecycle to the root package.
 
 ## External frontend mode
 

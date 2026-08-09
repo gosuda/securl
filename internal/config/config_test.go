@@ -17,7 +17,7 @@ func TestDefaultConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.HTTPAddr != ":8080" || config.StoreBackend != "memory" ||
+	if config.HTTPNetwork != "tcp" || config.HTTPAddr != ":8080" || config.StoreBackend != "memory" ||
 		config.FrontendMode != "embedded" || config.DefaultTTL.String() != "168h0m0s" ||
 		config.MaxEnvelopeBytes != 16384 || config.SafeBrowsingEnabled {
 		t.Fatalf("config=%+v", config)
@@ -51,8 +51,32 @@ func TestPaaSListenAddressDiscovery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if config.HTTPAddr != test.expected {
-				t.Fatalf("HTTPAddr=%q expected=%q", config.HTTPAddr, test.expected)
+			if config.HTTPNetwork != "tcp" || config.HTTPAddr != test.expected {
+				t.Fatalf("HTTPNetwork=%q HTTPAddr=%q expected=%q", config.HTTPNetwork, config.HTTPAddr, test.expected)
+			}
+		})
+	}
+}
+
+func TestUnixSocketListenAddressTakesPrecedenceOverPORT(t *testing.T) {
+	config, err := parseConfig(mapLookup(map[string]string{
+		"SECURL_HTTP_ADDR": "unix:/tmp/securl.sock",
+		"HOST":             "0.0.0.0",
+		"PORT":             "8080",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.HTTPNetwork != "unix" || config.HTTPAddr != "/tmp/securl.sock" {
+		t.Fatalf("HTTPNetwork=%q HTTPAddr=%q", config.HTTPNetwork, config.HTTPAddr)
+	}
+}
+
+func TestUnixSocketRequiresAbsolutePath(t *testing.T) {
+	for _, address := range []string{"unix:", "unix:securl.sock"} {
+		t.Run(address, func(t *testing.T) {
+			if _, err := parseConfig(mapLookup(map[string]string{"SECURL_HTTP_ADDR": address})); err == nil {
+				t.Fatal("relative Unix socket path accepted")
 			}
 		})
 	}

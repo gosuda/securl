@@ -1,9 +1,10 @@
 package httpapi
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/julienschmidt/httprouter"
 
@@ -28,7 +29,7 @@ type Dependencies struct {
 	PublicOrigins      map[string]struct{}
 	CORSAllowedOrigins map[string]struct{}
 	EnableHSTS         bool
-	Logger             *slog.Logger
+	Logger             *zerolog.Logger
 }
 
 type api struct {
@@ -43,7 +44,8 @@ func NewRouter(dependencies Dependencies) http.Handler {
 		dependencies.Now = time.Now
 	}
 	if dependencies.Logger == nil {
-		dependencies.Logger = slog.Default()
+		logger := zerolog.Nop()
+		dependencies.Logger = &logger
 	}
 	handler := &api{dependencies: dependencies}
 	router := httprouter.New()

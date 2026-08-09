@@ -73,13 +73,12 @@ func middleware(dependencies Dependencies, next http.Handler) http.Handler {
 			if route == "" {
 				route = "unmatched"
 			}
-			dependencies.Logger.Info(
-				"request completed",
-				"route", route,
-				"status", status,
-				"duration", time.Since(started),
-				"request_id", requestID,
-			)
+			dependencies.Logger.Info().
+				Str("route", route).
+				Int("status", status).
+				Dur("duration", time.Since(started)).
+				Str("request_id", requestID).
+				Msg("request completed")
 		}()
 
 		originValues := request.Header.Values("Origin")

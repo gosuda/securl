@@ -3,10 +3,10 @@ package cleanup
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"securl.click/securl/internal/store"
 	"securl.click/securl/internal/store/memory"
@@ -32,8 +32,8 @@ func TestWorkerDeletesOnlyExpiredBatch(t *testing.T) {
 		}
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	worker := NewWorker(repository, time.Minute, 1, logger)
+	logger := zerolog.Nop()
+	worker := NewWorker(repository, time.Minute, 1, &logger)
 	if deleted, err := worker.RunOnce(context.Background(), now); err != nil || deleted != 1 {
 		t.Fatalf("first sweep: deleted=%d err=%v", deleted, err)
 	}

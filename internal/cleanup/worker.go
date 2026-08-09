@@ -2,8 +2,9 @@ package cleanup
 
 import (
 	"context"
-	"log/slog"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"securl.click/securl/internal/store"
 )
@@ -17,7 +18,7 @@ type Worker struct {
 	repository store.Repository
 	interval   time.Duration
 	batch      int32
-	logger     *slog.Logger
+	logger     *zerolog.Logger
 	now        func() time.Time
 }
 
@@ -25,7 +26,7 @@ func NewWorker(
 	repository store.Repository,
 	interval time.Duration,
 	batch int32,
-	logger *slog.Logger,
+	logger *zerolog.Logger,
 ) *Worker {
 	if interval <= 0 {
 		interval = DefaultInterval
@@ -34,7 +35,8 @@ func NewWorker(
 		batch = DefaultBatch
 	}
 	if logger == nil {
-		logger = slog.Default()
+		nopLogger := zerolog.Nop()
+		logger = &nopLogger
 	}
 	return &Worker{
 		repository: repository,
@@ -60,12 +62,12 @@ func (worker *Worker) Run(ctx context.Context) {
 			deleted, err := worker.RunOnce(ctx, worker.now())
 			if err != nil {
 				if ctx.Err() == nil {
-					worker.logger.Warn("expired envelope cleanup failed", "error", err)
+					worker.logger.Warn().Err(err).Msg("expired envelope cleanup failed")
 				}
 				continue
 			}
 			if deleted > 0 {
-				worker.logger.Debug("expired envelopes deleted", "count", deleted)
+				worker.logger.Debug().Int64("count", deleted).Msg("expired envelopes deleted")
 			}
 		}
 	}
