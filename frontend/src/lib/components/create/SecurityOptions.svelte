@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { RuntimeConfig } from '$lib/gen/securl/v1/api_pb.js';
+  import type { RuntimeConfig } from '#lib/gen/securl/v1/api_pb.js';
   import Field from '../ui/Field.svelte';
 
   export let config: RuntimeConfig;

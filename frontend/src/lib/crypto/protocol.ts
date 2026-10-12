@@ -11,9 +11,11 @@ import {
   FeatureFlag,
   PasswordLayerSchema,
   PasswordProfile,
+  PayloadKind,
   PayloadSchema,
   type Envelope,
-  type EnvelopeMetadata
+  type EnvelopeMetadata,
+  type Payload
 } from '../gen/securl/v1/envelope_pb.js';
 
 const textEncoder = new TextEncoder();
@@ -31,7 +33,14 @@ export const PAYLOAD_NONCE_LENGTH = 24;
 export const PASSWORD_SALT_LENGTH = 16;
 const URL_PADDING_ALIGNMENT = 32;
 const MAX_URL_PADDING_LENGTH = 128;
+/** Serialized Markdown payloads are padded to a multiple of this many bytes. */
+export const MARKDOWN_PADDING_BUCKET = 1024;
 const NULL_BYTE = '\0';
+
+/** Plaintext carried by an envelope; mirrors the `Payload.content` oneof. */
+export type EnvelopeContent =
+  | { kind: 'url'; url: string }
+  | { kind: 'markdown'; deflated: Uint8Array };
 
 export class IncorrectPasswordError extends Error {
   constructor() {
@@ -123,6 +132,68 @@ function padDestinationUrl(
   }
 }
 
+function varintLength(value: number): number {
+  let length = 1;
+  while (value >= 0x80) {
+    value = Math.floor(value / 0x80);
+    length += 1;
+  }
+  return length;
+}
+
+/**
+ * Returns the `Payload.padding` length that makes the serialized Markdown payload an exact
+ * multiple of MARKDOWN_PADDING_BUCKET. The padding field costs one tag byte, its varint
+ * length, and the zero bytes, so some bucket boundaries are unreachable and roll to the next.
+ */
+export function markdownPaddingLength(unpaddedPayloadLength: number): number {
+  let target = Math.ceil(unpaddedPayloadLength / MARKDOWN_PADDING_BUCKET) * MARKDOWN_PADDING_BUCKET;
+  for (;;) {
+    const gap = target - unpaddedPayloadLength;
+    if (gap === 0) return 0;
+    for (let lengthBytes = 1; lengthBytes <= 3; lengthBytes += 1) {
+      const padding = gap - 1 - lengthBytes;
+      if (padding > 0 && varintLength(padding) === lengthBytes) return padding;
+    }
+    target += MARKDOWN_PADDING_BUCKET;
+  }
+}
+
+function serializePayload(content: EnvelopeContent, source?: (length: number) => Uint8Array): Uint8Array {
+  if (content.kind === 'url') {
+    return toBinary(
+      PayloadSchema,
+      create(PayloadSchema, {
+        content: { case: 'url', value: padDestinationUrl(content.url, source) }
+      }),
+      { writeUnknownFields: false }
+    );
+  }
+  if (content.deflated.length === 0) throw new Error('Markdown payload must not be empty.');
+  const payload = create(PayloadSchema, {
+    content: { case: 'markdownDeflate', value: content.deflated }
+  });
+  const unpadded = toBinary(PayloadSchema, payload, { writeUnknownFields: false });
+  const paddingLength = markdownPaddingLength(unpadded.length);
+  if (paddingLength === 0) return unpadded;
+  unpadded.fill(0);
+  payload.padding = new Uint8Array(paddingLength);
+  return toBinary(PayloadSchema, payload, { writeUnknownFields: false });
+}
+
+function parsePayload(payloadBytes: Uint8Array, kind: PayloadKind): EnvelopeContent {
+  const payload: Payload = fromBinary(PayloadSchema, payloadBytes);
+  if (kind === PayloadKind.URL && payload.content.case === 'url') {
+    const paddedUrl = payload.content.value;
+    const paddingStart = paddedUrl.indexOf(NULL_BYTE);
+    return { kind: 'url', url: paddingStart === -1 ? paddedUrl : paddedUrl.slice(0, paddingStart) };
+  }
+  if (kind === PayloadKind.MARKDOWN && payload.content.case === 'markdownDeflate') {
+    return { kind: 'markdown', deflated: payload.content.value };
+  }
+  throw new Error('Envelope payload does not match its declared kind.');
+}
+
 export function deriveRootKeySalt(serviceDomain: string): Uint8Array {
   const domainBytes = textEncoder.encode(normalizeServiceDomain(serviceDomain));
   const input = new Uint8Array(ROOT_KEY_SALT_PREFIX.length + domainBytes.length);
@@ -188,6 +259,9 @@ export function validateEnvelopeMetadata(metadata: EnvelopeMetadata): void {
   if ((metadata.featureFlags & ~KNOWN_FEATURE_FLAGS) !== 0) {
     throw new Error('Envelope contains unknown feature flags.');
   }
+  if (metadata.payloadKind !== PayloadKind.URL && metadata.payloadKind !== PayloadKind.MARKDOWN) {
+    throw new Error('Envelope contains an unknown payload kind.');
+  }
   if (!Number.isInteger(metadata.ttlSeconds) || metadata.ttlSeconds < 0) {
     throw new Error('Envelope TTL must be a non-negative integer. Zero means no expiration.');
   }
@@ -249,7 +323,7 @@ export function openLayer(
 }
 
 export function encryptEnvelope(
-  destinationUrl: string,
+  content: EnvelopeContent,
   idBytes: Uint8Array,
   encryptionKeyMaterial: Uint8Array,
   options: EncryptEnvelopeOptions
@@ -286,6 +360,7 @@ export function encryptEnvelope(
     featureFlags,
     ttlSeconds: options.ttlSeconds,
     payloadNonce,
+    payloadKind: content.kind === 'markdown' ? PayloadKind.MARKDOWN : PayloadKind.URL,
     password: options.password
       ? create(PasswordLayerSchema, {
           salt: options.password.salt.slice(),
@@ -298,12 +373,7 @@ export function encryptEnvelope(
       : undefined
   });
   const aad = serializeMetadata(metadata);
-  const paddedDestinationUrl = padDestinationUrl(destinationUrl, options.randomBytes);
-  const payloadBytes = toBinary(
-    PayloadSchema,
-    create(PayloadSchema, { url: paddedDestinationUrl }),
-    { writeUnknownFields: false }
-  );
+  const payloadBytes = serializePayload(content, options.randomBytes);
   const finalKey = deriveFinalKey(encryptionKeyMaterial, idBytes, payloadNonce);
 
   let ciphertext = sealLayer(finalKey, payloadNonce, payloadBytes, aad);
@@ -328,7 +398,7 @@ export function decryptEnvelope(
   idBytes: Uint8Array,
   encryptionKeyMaterial: Uint8Array,
   options: DecryptEnvelopeOptions = {}
-): string {
+): EnvelopeContent {
   requireIdBytes(idBytes);
   requireKey(encryptionKeyMaterial, 'Encryption key material');
   if (!envelope.metadata || envelope.ciphertext.length === 0) {
@@ -367,9 +437,11 @@ export function decryptEnvelope(
     const payloadBytes = openLayer(finalKey, metadata.payloadNonce, plaintext, aad);
     plaintext.fill(0);
     plaintext = payloadBytes;
-    const paddedUrl = fromBinary(PayloadSchema, payloadBytes).url;
-    const paddingStart = paddedUrl.indexOf(NULL_BYTE);
-    return paddingStart === -1 ? paddedUrl : paddedUrl.slice(0, paddingStart);
+    const content = parsePayload(payloadBytes, metadata.payloadKind);
+    // Decoded bytes alias payloadBytes, which is zero-filled below.
+    return content.kind === 'markdown'
+      ? { kind: 'markdown', deflated: content.deflated.slice() }
+      : content;
   } finally {
     plaintext.fill(0);
     finalKey.fill(0);

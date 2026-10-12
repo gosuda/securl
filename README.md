@@ -1,6 +1,6 @@
 # SecURL
 
-SecURL is a secure URL shortener that respects user privacy. Links are encrypted in your browser, so the server cannot read their destinations.
+SecURL is a secure URL shortener and Markdown pastebin that respects user privacy. Links and pastes are encrypted in your browser, so the server cannot read their destinations or contents. Pastes are compressed before encryption; the size limit applies to the compressed bytes.
 
 ## Quick start
 

@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	createRequestLimit       = int64(16 << 10)
 	accessRequestLimit       = int64(4 << 10)
 	safeBrowsingRequestLimit = int64(4 << 10)
 	knownFeatureFlags        = uint32(0x07)
@@ -72,6 +71,11 @@ func validateMetadata(metadata *securlv1.EnvelopeMetadata, allowedTTLs map[uint3
 	if metadata.Captcha != nil && len(metadata.Captcha.Nonce) != 24 {
 		return store.ErrInvalid
 	}
+	switch metadata.PayloadKind {
+	case securlv1.PayloadKind_PAYLOAD_KIND_URL, securlv1.PayloadKind_PAYLOAD_KIND_MARKDOWN:
+	default:
+		return store.ErrInvalid
+	}
 	return nil
 }
 
@@ -81,7 +85,7 @@ func (handler *api) createEnvelope(
 	_ httprouter.Params,
 ) {
 	var createRequest securlv1.CreateEnvelopeRequest
-	if requestErr := readRequest(writer, request, createRequestLimit, &createRequest); requestErr != nil {
+	if requestErr := readRequest(writer, request, handler.createRequestLimit, &createRequest); requestErr != nil {
 		writeError(writer, request, requestErr.status, requestErr.code, requestErr.message)
 		return
 	}
@@ -111,9 +115,20 @@ func (handler *api) createEnvelope(
 	}
 
 	envelopeBytes, err := createRequest.Envelope.MarshalVTStrict()
-	if err != nil || len(envelopeBytes) == 0 || len(envelopeBytes) > handler.dependencies.MaxEnvelopeBytes ||
-		len(createRequest.Envelope.Ciphertext) == 0 {
+	if err != nil || len(envelopeBytes) == 0 || len(createRequest.Envelope.Ciphertext) == 0 {
 		writeError(writer, request, http.StatusBadRequest, "invalid_request", "Invalid envelope request.")
+		return
+	}
+	envelopeLimit := handler.dependencies.MaxEnvelopeBytes
+	if metadata.PayloadKind == securlv1.PayloadKind_PAYLOAD_KIND_MARKDOWN {
+		envelopeLimit = handler.dependencies.MaxPasteEnvelopeBytes
+		if envelopeLimit <= 0 {
+			writeError(writer, request, http.StatusBadRequest, "feature_unavailable", "Markdown pastes are unavailable.")
+			return
+		}
+	}
+	if len(envelopeBytes) > envelopeLimit {
+		writeError(writer, request, http.StatusRequestEntityTooLarge, "envelope_too_large", "The encrypted content is too large.")
 		return
 	}
 	metadataBytes, err := metadata.MarshalVTStrict()

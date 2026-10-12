@@ -1,43 +1,63 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import CreateLink from '$lib/components/create/CreateLink.svelte';
-  import OpenLink from '$lib/components/open/OpenLink.svelte';
 
-  let mounted = false;
-  let fragment = '';
-  let hasFragment = false;
+  let mounted = $state(false);
+  let fragment = $state('');
 
-  $: hasFragment = mounted && fragment.length > 1;
+  // Client-side navigation updates page.url; manual hash edits fire hashchange.
+  $effect(() => {
+    fragment = page.url.hash;
+  });
 
   onMount(() => {
     const syncFragment = () => {
       fragment = window.location.hash;
     };
-    const unsubscribe = page.subscribe((currentPage) => {
-      fragment = currentPage.url.hash;
-    });
     syncFragment();
     window.addEventListener('hashchange', syncFragment);
     mounted = true;
-    return () => {
-      unsubscribe();
-      window.removeEventListener('hashchange', syncFragment);
-    };
+    return () => window.removeEventListener('hashchange', syncFragment);
   });
 </script>
 
-{#if !mounted}
+{#snippet loading()}
   <main class="shell shell--loading" aria-busy="true">
     <div class="loading-block">
       <h1>SecURL</h1>
       <p>Getting things ready…</p>
     </div>
   </main>
-{:else if hasFragment}
+{/snippet}
+
+{#snippet loadFailed()}
+  <main class="shell">
+    <div class="loading-block">
+      <h1>SecURL</h1>
+      <p>SecURL could not load. Check your connection and reload the page.</p>
+    </div>
+  </main>
+{/snippet}
+
+<!-- Dynamic imports are deliberate code-split points: openers never download the creator, and vice versa. -->
+{#if !mounted}
+  {@render loading()}
+{:else if fragment.length > 1}
   {#key fragment}
-    <OpenLink {fragment} />
+    {#await import('#lib/components/open/OpenLink.svelte')}
+      {@render loading()}
+    {:then { default: OpenLink }}
+      <OpenLink {fragment} />
+    {:catch}
+      {@render loadFailed()}
+    {/await}
   {/key}
 {:else}
-  <CreateLink />
+  {#await import('#lib/components/create/CreateLink.svelte')}
+    {@render loading()}
+  {:then { default: CreateLink }}
+    <CreateLink />
+  {:catch}
+    {@render loadFailed()}
+  {/await}
 {/if}

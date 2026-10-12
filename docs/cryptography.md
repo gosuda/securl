@@ -61,12 +61,25 @@ final_key = HKDF-SHA3-256(
 
 ## Payload encryption
 
-The canonical destination URL is serialized in the protobuf `Payload` message. Zero padding is appended after the URL with these rules:
+The plaintext is the protobuf `Payload` message. Its `content` oneof carries either a destination URL or compressed Markdown. `EnvelopeMetadata.payload_kind` declares which one is present; it is part of the authenticated metadata, and decryption rejects a payload whose content does not match it. URL envelopes use kind `0`, the protobuf default, so their serialized metadata and AAD are byte-identical to envelopes created before payload kinds existed.
+
+### URL payloads
+
+The canonical destination URL is stored in `Payload.url`. Zero padding is appended after the URL with these rules:
 
 - URL plus padding never exceeds 4096 UTF-8 bytes.
 - Padding is between 0 and 128 NUL bytes.
 - Candidate padding lengths align the padded URL length to a 32-byte boundary when space permits.
 - Decryption ignores the first NUL byte and everything after it.
+
+### Markdown payloads
+
+The browser compresses the UTF-8 Markdown with raw DEFLATE (RFC 1951, `CompressionStream('deflate-raw')`) and stores the result in `Payload.markdown_deflate`.
+
+- The compressed size, before padding, must not exceed `RuntimeConfig.max_paste_bytes` (the server's `SECURL_MAX_PASTE_BYTES`). The browser checks this before encrypting and reports the compressed size; the server enforces it again on the serialized envelope with 2048 bytes of headroom for padding, protobuf framing, AEAD tags, and metadata.
+- `Payload.padding` holds zero bytes chosen so the serialized `Payload` is an exact multiple of 1024 bytes. The ciphertext therefore reveals the compressed length only to 1 KiB granularity. Because compressed length depends on content, this is a coarse bound, not content hiding.
+- Decryption rejects inflated output above 4 MiB and invalid UTF-8.
+- Compression happens before encryption. Compressing attacker-influenced input alongside secrets can leak information through ciphertext length; a paste is authored by a single person, so no secret is mixed with untrusted input.
 
 The payload is encrypted with XChaCha20-Poly1305:
 
@@ -79,7 +92,7 @@ ciphertext_0 = XChaCha20-Poly1305(
 )
 ```
 
-The authenticated metadata contains protocol version 2, feature flags, TTL, the payload nonce, and the metadata required by optional password and CAPTCHA layers. Any metadata modification invalidates the AEAD tag.
+The authenticated metadata contains protocol version 2, feature flags, TTL, the payload nonce, the payload kind, and the metadata required by optional password and CAPTCHA layers. Any metadata modification invalidates the AEAD tag.
 
 ## Password layer
 
@@ -124,6 +137,6 @@ The browser performs the inverse operations:
 6. Remove the CAPTCHA layer.
 7. Remove the password layer.
 8. Derive the final payload key and decrypt the payload.
-9. Remove NUL padding and validate the destination URL again.
+9. For URLs, remove NUL padding and validate the destination URL again. For Markdown, inflate, decode UTF-8, and render with raw HTML escaped, sanitized output, script URLs removed, and remote images stripped.
 
 Temporary root, encryption, password, CAPTCHA, payload, and plaintext byte arrays are zero-filled at their final use sites where the runtime exposes mutable storage.

@@ -1,5 +1,5 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { env } from '$env/dynamic/public';
+import { PUBLIC_SECURL_API_BASE_URL } from '$app/env/public';
 import {
   AccessEnvelopeRequestSchema,
   AccessEnvelopeResponseSchema,
@@ -16,7 +16,7 @@ import {
 import { EnvelopeSchema, type Envelope } from '../gen/securl/v1/envelope_pb.js';
 import { CreateConflictError, CreateTransportError } from './create';
 
-export const API_BASE_URL = (env.PUBLIC_SECURL_API_BASE_URL ?? '').replace(/\/$/, '');
+export const API_BASE_URL = (PUBLIC_SECURL_API_BASE_URL ?? '').replace(/\/$/, '');
 
 export class ApiError extends Error {
   readonly status: number;

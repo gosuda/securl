@@ -16,24 +16,36 @@ import (
 )
 
 type Dependencies struct {
-	Repository         store.Repository
-	Access             *access.Service
-	CaptchaVerifier    captcha.Verifier
-	CaptchaWrapper     *captcha.KeyWrapper
-	SafeBrowsing       safebrowsing.LookupClient
-	RuntimeConfig      *securlv1.RuntimeConfig
-	AllowedTTLs        map[uint32]struct{}
-	MaxEnvelopeBytes   int
-	Now                func() time.Time
-	Frontend           http.Handler
-	PublicOrigins      map[string]struct{}
-	CORSAllowedOrigins map[string]struct{}
-	EnableHSTS         bool
-	Logger             *zerolog.Logger
+	Repository       store.Repository
+	Access           *access.Service
+	CaptchaVerifier  captcha.Verifier
+	CaptchaWrapper   *captcha.KeyWrapper
+	SafeBrowsing     safebrowsing.LookupClient
+	RuntimeConfig    *securlv1.RuntimeConfig
+	AllowedTTLs      map[uint32]struct{}
+	MaxEnvelopeBytes int
+	// MaxPasteEnvelopeBytes is the serialized envelope limit for Markdown pastes. Zero disables pastes.
+	MaxPasteEnvelopeBytes int
+	Now                   func() time.Time
+	Frontend              http.Handler
+	PublicOrigins         map[string]struct{}
+	CORSAllowedOrigins    map[string]struct{}
+	EnableHSTS            bool
+	Logger                *zerolog.Logger
 }
 
+// PasteEnvelopeOverhead is added to the maximum padded compressed Markdown size to
+// obtain the serialized envelope limit: a 1024-byte padding bucket plus 1024 bytes
+// of protobuf, AEAD, and metadata headroom.
+const PasteEnvelopeOverhead = 2048
+
+// createRequestOverhead covers the request wrapper around the envelope: storage
+// key, CAPTCHA key, and CAPTCHA token.
+const createRequestOverhead = 8 << 10
+
 type api struct {
-	dependencies Dependencies
+	dependencies       Dependencies
+	createRequestLimit int64
 }
 
 func NewRouter(dependencies Dependencies) http.Handler {
@@ -47,7 +59,10 @@ func NewRouter(dependencies Dependencies) http.Handler {
 		logger := zerolog.Nop()
 		dependencies.Logger = &logger
 	}
-	handler := &api{dependencies: dependencies}
+	handler := &api{
+		dependencies:       dependencies,
+		createRequestLimit: int64(max(dependencies.MaxEnvelopeBytes, dependencies.MaxPasteEnvelopeBytes)) + createRequestOverhead,
+	}
 	router := httprouter.New()
 	router.RedirectTrailingSlash = false
 	router.RedirectFixedPath = false

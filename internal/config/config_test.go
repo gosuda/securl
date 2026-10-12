@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/base64"
+	"strings"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestDefaultConfiguration(t *testing.T) {
 	}
 	if config.HTTPNetwork != "tcp" || config.HTTPAddr != ":8080" || config.StoreBackend != "memory" ||
 		config.FrontendMode != "embedded" || config.DefaultTTL.String() != "168h0m0s" ||
-		config.MaxEnvelopeBytes != 6144 || config.SafeBrowsingEnabled {
+		config.MaxEnvelopeBytes != 6144 || config.MaxPasteBytes != 65536 || config.SafeBrowsingEnabled {
 		t.Fatalf("config=%+v", config)
 	}
 	if _, ok := config.PublicOrigins["http://localhost:8080"]; !ok {
@@ -27,6 +28,40 @@ func TestDefaultConfiguration(t *testing.T) {
 	}
 	if _, ok := config.AllowedTTLSet[0]; !ok {
 		t.Fatalf("default TTLs do not allow forever: %v", config.AllowedTTLSeconds)
+	}
+}
+
+func TestMaxPasteBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		expected uint32
+		invalid  bool
+	}{
+		{name: "zero disables pastes", value: "0", expected: 0},
+		{name: "custom", value: "1024", expected: 1024},
+		{name: "upper bound", value: "1046528", expected: 1046528},
+		{name: "over limit", value: "1046529", invalid: true},
+		{name: "negative", value: "-1", invalid: true},
+		{name: "non-numeric", value: "lots", invalid: true},
+		{name: "empty", value: "", invalid: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config, err := parseConfig(mapLookup(map[string]string{"SECURL_MAX_PASTE_BYTES": test.value}))
+			if test.invalid {
+				if err == nil || !strings.Contains(err.Error(), "SECURL_MAX_PASTE_BYTES") {
+					t.Fatalf("err=%v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if config.MaxPasteBytes != test.expected {
+				t.Fatalf("MaxPasteBytes=%d expected=%d", config.MaxPasteBytes, test.expected)
+			}
+		})
 	}
 }
 

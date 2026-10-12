@@ -53,13 +53,14 @@ The listener only controls where the process accepts traffic. If a reverse proxy
 | `SECURL_STORE_BACKEND` | `memory` | `postgres` | Storage implementation: `memory`, `postgres`, or `mariadb`. Memory storage is erased when the process exits. |
 | `SECURL_POSTGRES_URL` | empty | `postgres://securl:password@postgres:5432/securl` | PostgreSQL or CockroachDB connection URL. It is required when `SECURL_STORE_BACKEND=postgres`. SecURL connects, checks the server version, and applies embedded migrations at startup. |
 | `SECURL_MARIADB_DSN` | empty | `securl:password@tcp(mariadb:3306)/securl` | MariaDB DSN in `go-sql-driver/mysql` format. It is required when `SECURL_STORE_BACKEND=mariadb`. SecURL forces UTC time parsing, `utf8mb4`, and `utf8mb4_bin`. |
-| `SECURL_MAX_ENVELOPE_BYTES` | `6144` | `8192` | Largest serialized encrypted envelope accepted by the API, in bytes. It must be a positive integer. The default leaves 1,881 bytes of headroom above the current protocol maximum of 4,263 bytes. Raising it allows larger future metadata and ciphertext; lowering it may reject links produced by existing clients. |
+| `SECURL_MAX_ENVELOPE_BYTES` | `6144` | `8192` | Largest serialized encrypted URL envelope accepted by the API, in bytes. It applies to URL envelopes only; Markdown pastes use `SECURL_MAX_PASTE_BYTES`. It must be a positive integer. The default leaves 1,881 bytes of headroom above the current protocol maximum of 4,263 bytes. Raising it allows larger future metadata and ciphertext; lowering it may reject links produced by existing clients. |
+| `SECURL_MAX_PASTE_BYTES` | `65536` | `131072` | Largest compressed Markdown payload accepted for encrypted pastes, in bytes, before the browser pads it to a 1,024-byte bucket. The server accepts Markdown envelopes up to this value plus 2,048 bytes for padding, protobuf framing, AEAD tag, and metadata. It must be an integer from `0` to `1046528`; `0` disables pastes, and Markdown envelopes are then rejected with `feature_unavailable`. The database check constraint allows envelopes up to 1 MiB (1,048,576 bytes), so the upper bound keeps every accepted envelope storable. |
 
 ### Database startup behavior
 
 PostgreSQL uses a transaction-scoped advisory lock while applying migrations. CockroachDB is detected from `SELECT version()` and uses its compatible migration path automatically, including retries for serialization failures. No separate CockroachDB flag is needed.
 
-MariaDB uses a connection-scoped `GET_LOCK` while applying its idempotent migration. Tables are created as InnoDB with `utf8mb4_bin` collation.
+MariaDB uses a connection-scoped `GET_LOCK` while applying its idempotent migrations. Tables are created as InnoDB with `utf8mb4_bin` collation.
 
 ## Link lifetime and cleanup
 
@@ -89,7 +90,7 @@ It keeps processing `SECURL_CLEANUP_BATCH` rows at a time until the initial expi
 | `SECURL_SAFE_BROWSING_TIMEOUT` | `3s` | `5s` | Timeout for each upstream Safe Browsing request. It must be a positive duration. Keep it short enough that opening a protected link does not stall on an unhealthy dependency. |
 | `SECURL_SAFE_BROWSING_CACHE_ENTRIES` | `4096` | `8192` | Maximum number of hash-prefix results kept in the in-memory LRU cache. It must be a positive integer. Cache expiration follows the duration returned by Google. |
 
-When Safe Browsing is disabled, opening a destination always requires an explicit user action. If it is enabled but the upstream lookup fails, the destination remains gated and the user can explicitly choose the unscanned path.
+When Safe Browsing is enabled, a link opens as soon as the lookup reports the destination clean; there is no countdown. Threat matches never open automatically. If the upstream lookup fails, the destination remains gated and the user can explicitly choose the unscanned path. When Safe Browsing is disabled, opening a destination always requires an explicit user action. Markdown pastes are never sent to Safe Browsing.
 
 ## CAPTCHA
 

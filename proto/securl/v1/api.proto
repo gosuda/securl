@@ -52,6 +52,8 @@ message RuntimeConfig {
   uint32 default_ttl_seconds = 5;
   uint32 max_url_bytes = 6;
   bool create_captcha_required = 7;
+  // Largest compressed Markdown payload, before padding. Zero disables pastes.
+  uint32 max_paste_bytes = 8;
 }
 
 message SafeBrowsingLookupRequest {

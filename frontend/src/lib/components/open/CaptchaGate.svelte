@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CaptchaProvider } from '$lib/gen/securl/v1/api_pb.js';
+  import { CaptchaProvider } from '#lib/gen/securl/v1/api_pb.js';
   import CaptchaChallenge from '../ui/CaptchaChallenge.svelte';
   import Panel from '../ui/Panel.svelte';
 

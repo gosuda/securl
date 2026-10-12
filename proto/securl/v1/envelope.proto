@@ -16,6 +16,12 @@ enum FeatureFlag {
   FEATURE_FLAG_BURN_AFTER_READ = 4;
 }
 
+// Zero keeps metadata of existing URL envelopes byte-identical, so their AAD is unchanged.
+enum PayloadKind {
+  PAYLOAD_KIND_URL = 0;
+  PAYLOAD_KIND_MARKDOWN = 1;
+}
+
 message PasswordLayer {
   bytes salt = 1;
   bytes nonce = 2;
@@ -34,6 +40,7 @@ message EnvelopeMetadata {
   bytes payload_nonce = 4;
   PasswordLayer password = 5;
   CaptchaLayer captcha = 6;
+  PayloadKind payload_kind = 7;
 }
 
 message Envelope {
@@ -42,5 +49,12 @@ message Envelope {
 }
 
 message Payload {
-  string url = 1;
+  oneof content {
+    // NUL-padded destination URL.
+    string url = 1;
+    // Raw DEFLATE (RFC 1951) compressed UTF-8 Markdown.
+    bytes markdown_deflate = 2;
+  }
+  // Zero bytes that hide the exact compressed Markdown length.
+  bytes padding = 3;
 }

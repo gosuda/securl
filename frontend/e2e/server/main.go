@@ -68,12 +68,14 @@ func main() {
 			DefaultTtlSeconds:     604800,
 			MaxUrlBytes:           8192,
 			CreateCaptchaRequired: true,
+			MaxPasteBytes:         65536,
 		},
-		AllowedTTLs:      allowedTTLs,
-		MaxEnvelopeBytes: 6144,
-		Frontend:         frontendHandler,
-		PublicOrigins:    map[string]struct{}{origin: {}},
-		Logger:           &logger,
+		AllowedTTLs:           allowedTTLs,
+		MaxEnvelopeBytes:      6144,
+		MaxPasteEnvelopeBytes: 65536 + httpapi.PasteEnvelopeOverhead,
+		Frontend:              frontendHandler,
+		PublicOrigins:         map[string]struct{}{origin: {}},
+		Logger:                &logger,
 	})
 	listener, err := net.Listen("tcp", "127.0.0.1:4179")
 	if err != nil {

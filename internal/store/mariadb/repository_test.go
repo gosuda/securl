@@ -71,7 +71,7 @@ func TestRepositoryContract(t *testing.T) {
 	if err := repository.database.QueryRowContext(context.Background(), "SELECT count(*) FROM securl_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != 1 {
+	if migrationCount != 2 {
 		t.Fatalf("migration count=%d", migrationCount)
 	}
 	var connectionCharset, connectionCollation string
@@ -151,6 +151,26 @@ WHERE table_schema = DATABASE() AND table_name IN ('envelopes', 'securl_schema_m
 	}
 	if _, err := repository.Get(context.Background(), unlimited.StorageKey, time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("unlimited record was cleaned up: %v", err)
+	}
+}
+func TestRepositoryEnvelopeSizeLimit(t *testing.T) {
+	repository := testRepository(t)
+	ctx := context.Background()
+	for index, size := range []int{20000, 1 << 20} {
+		input := createInput(byte(index+10), byte(index+10), time.Time{})
+		input.Envelope = make([]byte, size)
+		if _, err := repository.Create(ctx, input); err != nil {
+			t.Fatalf("create %d byte envelope: %v", size, err)
+		}
+		record, err := repository.Get(ctx, input.StorageKey, time.Unix(0, 0).UTC())
+		if err != nil || len(record.Envelope) != size {
+			t.Fatalf("get %d byte envelope: len=%d err=%v", size, len(record.Envelope), err)
+		}
+	}
+	input := createInput(20, 20, time.Time{})
+	input.Envelope = make([]byte, 1<<20+1)
+	if _, err := repository.Create(ctx, input); err == nil {
+		t.Fatal("envelope over 1 MiB was stored")
 	}
 }
 

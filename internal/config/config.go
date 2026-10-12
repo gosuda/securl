@@ -14,9 +14,14 @@ import (
 	"golang.org/x/net/idna"
 
 	securlv1 "securl.click/securl/gen/go/securl/v1"
+	"securl.click/securl/internal/httpapi"
 )
 
 const maxTTL = 720 * time.Hour
+
+// maxPasteBytesLimit is the 1 MiB database envelope cap minus the paste
+// envelope overhead (padding bucket plus protobuf/AEAD/metadata headroom).
+const maxPasteBytesLimit = 1<<20 - httpapi.PasteEnvelopeOverhead
 
 type Config struct {
 	HTTPNetwork              string
@@ -34,6 +39,7 @@ type Config struct {
 	CleanupInterval          time.Duration
 	CleanupBatch             int32
 	MaxEnvelopeBytes         int
+	MaxPasteBytes            uint32
 	MaxURLBytes              uint32
 	SafeBrowsingEnabled      bool
 	SafeBrowsingAPIKey       string
@@ -129,6 +135,11 @@ func parseConfig(lookup func(string) (string, bool)) (Config, error) {
 	}
 	if config.MaxEnvelopeBytes, err = positiveInt(value("SECURL_MAX_ENVELOPE_BYTES", "6144")); err != nil {
 		return Config{}, fmt.Errorf("SECURL_MAX_ENVELOPE_BYTES: %w", err)
+	}
+	if config.MaxPasteBytes, err = boundedUint32(
+		value("SECURL_MAX_PASTE_BYTES", "65536"), maxPasteBytesLimit,
+	); err != nil {
+		return Config{}, fmt.Errorf("SECURL_MAX_PASTE_BYTES: %w", err)
 	}
 	if config.SafeBrowsingEnabled, err = strconv.ParseBool(value("SECURL_SAFE_BROWSING_ENABLED", "false")); err != nil {
 		return Config{}, fmt.Errorf("SECURL_SAFE_BROWSING_ENABLED: %w", err)
@@ -328,4 +339,12 @@ func positiveInt32(value string) (int32, error) {
 		return 0, errors.New("must be a positive 32-bit integer")
 	}
 	return int32(parsed), nil
+}
+
+func boundedUint32(value string, limit uint32) (uint32, error) {
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil || parsed > uint64(limit) {
+		return 0, fmt.Errorf("must be an integer from 0 to %d", limit)
+	}
+	return uint32(parsed), nil
 }

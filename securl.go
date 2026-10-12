@@ -206,21 +206,27 @@ func (application *Application) Serve(ctx context.Context, listener net.Listener
 		DefaultTtlSeconds:     uint32(application.config.DefaultTTL / time.Second),
 		MaxUrlBytes:           application.config.MaxURLBytes,
 		CreateCaptchaRequired: application.config.CreateCaptchaRequired,
+		MaxPasteBytes:         application.config.MaxPasteBytes,
+	}
+	maxPasteEnvelopeBytes := 0
+	if application.config.MaxPasteBytes > 0 {
+		maxPasteEnvelopeBytes = int(application.config.MaxPasteBytes) + httpapi.PasteEnvelopeOverhead
 	}
 	router := httpapi.NewRouter(httpapi.Dependencies{
-		Repository:         repository,
-		Access:             access,
-		CaptchaVerifier:    verifier,
-		CaptchaWrapper:     wrapper,
-		SafeBrowsing:       safeBrowsing,
-		RuntimeConfig:      runtimeConfig,
-		AllowedTTLs:        application.config.AllowedTTLSet,
-		MaxEnvelopeBytes:   application.config.MaxEnvelopeBytes,
-		Frontend:           frontendHandler,
-		PublicOrigins:      application.config.PublicOrigins,
-		CORSAllowedOrigins: application.config.CORSOrigins,
-		EnableHSTS:         application.config.EnableHSTS,
-		Logger:             application.logger,
+		Repository:            repository,
+		Access:                access,
+		CaptchaVerifier:       verifier,
+		CaptchaWrapper:        wrapper,
+		SafeBrowsing:          safeBrowsing,
+		RuntimeConfig:         runtimeConfig,
+		AllowedTTLs:           application.config.AllowedTTLSet,
+		MaxEnvelopeBytes:      application.config.MaxEnvelopeBytes,
+		MaxPasteEnvelopeBytes: maxPasteEnvelopeBytes,
+		Frontend:              frontendHandler,
+		PublicOrigins:         application.config.PublicOrigins,
+		CORSAllowedOrigins:    application.config.CORSOrigins,
+		EnableHSTS:            application.config.EnableHSTS,
+		Logger:                application.logger,
 	})
 	handlers := newHandlerTracker(router)
 	server := httpapi.NewServer(handlers, application.logger)

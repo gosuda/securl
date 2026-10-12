@@ -140,6 +140,11 @@ func (m *EnvelopeMetadata) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.PayloadKind != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.PayloadKind))
+		i--
+		dAtA[i] = 0x38
+	}
 	if m.Captcha != nil {
 		size, err := m.Captcha.MarshalToSizedBufferVT(dAtA[:i])
 		if err != nil {
@@ -265,16 +270,53 @@ func (m *Payload) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if len(m.Url) > 0 {
-		i -= len(m.Url)
-		copy(dAtA[i:], m.Url)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Url)))
+	if vtmsg, ok := m.Content.(interface {
+		MarshalToSizedBufferVT([]byte) (int, error)
+	}); ok {
+		size, err := vtmsg.MarshalToSizedBufferVT(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+	}
+	if len(m.Padding) > 0 {
+		i -= len(m.Padding)
+		copy(dAtA[i:], m.Padding)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Padding)))
 		i--
-		dAtA[i] = 0xa
+		dAtA[i] = 0x1a
 	}
 	return len(dAtA) - i, nil
 }
 
+func (m *Payload_Url) MarshalToVT(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVT(dAtA[:size])
+}
+
+func (m *Payload_Url) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= len(m.Url)
+	copy(dAtA[i:], m.Url)
+	i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Url)))
+	i--
+	dAtA[i] = 0xa
+	return len(dAtA) - i, nil
+}
+func (m *Payload_MarkdownDeflate) MarshalToVT(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVT(dAtA[:size])
+}
+
+func (m *Payload_MarkdownDeflate) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= len(m.MarkdownDeflate)
+	copy(dAtA[i:], m.MarkdownDeflate)
+	i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.MarkdownDeflate)))
+	i--
+	dAtA[i] = 0x12
+	return len(dAtA) - i, nil
+}
 func (m *PasswordLayer) MarshalVTStrict() (dAtA []byte, err error) {
 	if m == nil {
 		return nil, nil
@@ -396,6 +438,11 @@ func (m *EnvelopeMetadata) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.PayloadKind != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.PayloadKind))
+		i--
+		dAtA[i] = 0x38
 	}
 	if m.Captcha != nil {
 		size, err := m.Captcha.MarshalToSizedBufferVTStrict(dAtA[:i])
@@ -522,16 +569,58 @@ func (m *Payload) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if len(m.Url) > 0 {
-		i -= len(m.Url)
-		copy(dAtA[i:], m.Url)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Url)))
+	if len(m.Padding) > 0 {
+		i -= len(m.Padding)
+		copy(dAtA[i:], m.Padding)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Padding)))
 		i--
-		dAtA[i] = 0xa
+		dAtA[i] = 0x1a
+	}
+	if msg, ok := m.Content.(*Payload_MarkdownDeflate); ok {
+		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+	}
+	if msg, ok := m.Content.(*Payload_Url); ok {
+		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
 	}
 	return len(dAtA) - i, nil
 }
 
+func (m *Payload_Url) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Payload_Url) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= len(m.Url)
+	copy(dAtA[i:], m.Url)
+	i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Url)))
+	i--
+	dAtA[i] = 0xa
+	return len(dAtA) - i, nil
+}
+func (m *Payload_MarkdownDeflate) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Payload_MarkdownDeflate) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= len(m.MarkdownDeflate)
+	copy(dAtA[i:], m.MarkdownDeflate)
+	i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.MarkdownDeflate)))
+	i--
+	dAtA[i] = 0x12
+	return len(dAtA) - i, nil
+}
 func (m *PasswordLayer) SizeVT() (n int) {
 	if m == nil {
 		return 0
@@ -594,6 +683,9 @@ func (m *EnvelopeMetadata) SizeVT() (n int) {
 		l = m.Captcha.SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
+	if m.PayloadKind != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.PayloadKind))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -622,7 +714,10 @@ func (m *Payload) SizeVT() (n int) {
 	}
 	var l int
 	_ = l
-	l = len(m.Url)
+	if vtmsg, ok := m.Content.(interface{ SizeVT() int }); ok {
+		n += vtmsg.SizeVT()
+	}
+	l = len(m.Padding)
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
@@ -630,6 +725,26 @@ func (m *Payload) SizeVT() (n int) {
 	return n
 }
 
+func (m *Payload_Url) SizeVT() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Url)
+	n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	return n
+}
+func (m *Payload_MarkdownDeflate) SizeVT() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.MarkdownDeflate)
+	n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	return n
+}
 func (m *PasswordLayer) UnmarshalVT(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -1045,6 +1160,25 @@ func (m *EnvelopeMetadata) UnmarshalVT(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PayloadKind", wireType)
+			}
+			m.PayloadKind = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.PayloadKind |= PayloadKind(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -1247,7 +1381,74 @@ func (m *Payload) UnmarshalVT(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Url = string(dAtA[iNdEx:postIndex])
+			m.Content = &Payload_Url{Url: string(dAtA[iNdEx:postIndex])}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MarkdownDeflate", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := make([]byte, postIndex-iNdEx)
+			copy(v, dAtA[iNdEx:postIndex])
+			m.Content = &Payload_MarkdownDeflate{MarkdownDeflate: v}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Padding", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Padding = append(m.Padding[:0], dAtA[iNdEx:postIndex]...)
+			if m.Padding == nil {
+				m.Padding = []byte{}
+			}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

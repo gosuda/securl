@@ -151,11 +151,12 @@ func TestRequestContentTypeAndSizeBoundaries(t *testing.T) {
 		t.Fatalf("missing content type status=%d", response.Code)
 	}
 
-	response = postProtobuf(router, "/api/v1/envelopes", make([]byte, createRequestLimit))
+	defaultRequestLimit := int64(6144 + createRequestOverhead)
+	response = postProtobuf(router, "/api/v1/envelopes", make([]byte, defaultRequestLimit))
 	if response.Code == http.StatusRequestEntityTooLarge {
 		t.Fatalf("exact boundary incorrectly rejected: %d", response.Code)
 	}
-	response = postProtobuf(router, "/api/v1/envelopes", make([]byte, createRequestLimit+1))
+	response = postProtobuf(router, "/api/v1/envelopes", make([]byte, defaultRequestLimit+1))
 	if response.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("over boundary status=%d", response.Code)
 	}
@@ -209,8 +210,131 @@ func TestCreateEnvelopeSizeBoundaryUsesDefaultLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	response = postProtobuf(validationRouter(memory.New()), "/api/v1/envelopes", overBody)
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("over boundary status=%d body=%x", response.Code, response.Body.Bytes())
+	assertAPIError(t, response, http.StatusRequestEntityTooLarge, "envelope_too_large")
+}
+
+func assertAPIError(t *testing.T, response *httptest.ResponseRecorder, status int, code string) {
+	t.Helper()
+	if response.Code != status {
+		t.Fatalf("status=%d expected=%d body=%q", response.Code, status, response.Body.String())
+	}
+	var apiError securlv1.ErrorResponse
+	if err := apiError.UnmarshalVT(response.Body.Bytes()); err != nil {
+		t.Fatalf("decode error response: %v body=%x", err, response.Body.Bytes())
+	}
+	if apiError.Code != code {
+		t.Fatalf("code=%q expected=%q", apiError.Code, code)
+	}
+}
+
+// ciphertextSizeForEnvelope returns the ciphertext length whose serialized
+// envelope (with the minimal valid metadata of the given kind) is exactly
+// envelopeSize bytes.
+func ciphertextSizeForEnvelope(t *testing.T, kind securlv1.PayloadKind, envelopeSize int) int {
+	t.Helper()
+	envelope := &securlv1.Envelope{
+		Metadata: &securlv1.EnvelopeMetadata{
+			ProtocolVersion: 2, TtlSeconds: 3600, PayloadNonce: make([]byte, 24), PayloadKind: kind,
+		},
+	}
+	for size := envelopeSize; size > 0; size-- {
+		envelope.Ciphertext = make([]byte, size)
+		if envelope.SizeVT() == envelopeSize {
+			return size
+		}
+	}
+	t.Fatalf("no ciphertext size yields envelope size %d", envelopeSize)
+	return 0
+}
+
+func kindCreateBody(t *testing.T, kind securlv1.PayloadKind, ciphertextSize int) []byte {
+	t.Helper()
+	body, err := (&securlv1.CreateEnvelopeRequest{
+		StorageKey: make([]byte, 16),
+		Envelope: &securlv1.Envelope{
+			Metadata: &securlv1.EnvelopeMetadata{
+				ProtocolVersion: 2,
+				TtlSeconds:      3600,
+				PayloadNonce:    bytes.Repeat([]byte{1}, 24),
+				PayloadKind:     kind,
+			},
+			Ciphertext: make([]byte, ciphertextSize),
+		},
+	}).MarshalVTStrict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+func TestCreateEnforcesPerKindEnvelopeLimits(t *testing.T) {
+	const pasteLimit = 40960 + PasteEnvelopeOverhead
+	router := func() http.Handler {
+		return NewRouter(Dependencies{
+			Repository: memory.New(),
+			RuntimeConfig: &securlv1.RuntimeConfig{
+				AllowedTtlSeconds: []uint32{3600}, DefaultTtlSeconds: 3600, MaxPasteBytes: 40960,
+			},
+			AllowedTTLs:           map[uint32]struct{}{3600: {}},
+			MaxPasteEnvelopeBytes: pasteLimit,
+			Now:                   func() time.Time { return time.Unix(10000, 0).UTC() },
+		})
+	}
+	disabledRouter := func() http.Handler { return validationRouter(memory.New()) }
+	ciphertextFor := func(kind securlv1.PayloadKind, envelopeSize int) int {
+		return ciphertextSizeForEnvelope(t, kind, envelopeSize)
+	}
+	tests := []struct {
+		name       string
+		router     func() http.Handler
+		kind       securlv1.PayloadKind
+		ciphertext int
+		status     int
+		code       string
+	}{
+		{
+			name: "url over envelope limit", router: router, kind: securlv1.PayloadKind_PAYLOAD_KIND_URL,
+			ciphertext: ciphertextFor(securlv1.PayloadKind_PAYLOAD_KIND_URL, 6145),
+			status:     http.StatusRequestEntityTooLarge, code: "envelope_too_large",
+		},
+		{
+			name: "markdown exactly at limit", router: router, kind: securlv1.PayloadKind_PAYLOAD_KIND_MARKDOWN,
+			ciphertext: ciphertextFor(securlv1.PayloadKind_PAYLOAD_KIND_MARKDOWN, pasteLimit),
+			status:     http.StatusCreated,
+		},
+		{
+			name: "markdown over limit", router: router, kind: securlv1.PayloadKind_PAYLOAD_KIND_MARKDOWN,
+			ciphertext: ciphertextFor(securlv1.PayloadKind_PAYLOAD_KIND_MARKDOWN, pasteLimit+1),
+			status:     http.StatusRequestEntityTooLarge, code: "envelope_too_large",
+		},
+		{
+			name: "markdown larger than former request limit", router: router,
+			kind: securlv1.PayloadKind_PAYLOAD_KIND_MARKDOWN, ciphertext: 20000,
+			status: http.StatusCreated,
+		},
+		{
+			name: "markdown while disabled", router: disabledRouter,
+			kind: securlv1.PayloadKind_PAYLOAD_KIND_MARKDOWN, ciphertext: 100,
+			status: http.StatusBadRequest, code: "feature_unavailable",
+		},
+		{
+			name: "unknown payload kind", router: router, kind: securlv1.PayloadKind(7), ciphertext: 100,
+			status: http.StatusBadRequest, code: "invalid_request",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := postProtobuf(
+				test.router(), "/api/v1/envelopes", kindCreateBody(t, test.kind, test.ciphertext),
+			)
+			if test.status == http.StatusCreated {
+				if response.Code != http.StatusCreated {
+					t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+				}
+				return
+			}
+			assertAPIError(t, response, test.status, test.code)
+		})
 	}
 }
 

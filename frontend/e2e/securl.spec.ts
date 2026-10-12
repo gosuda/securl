@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import {
   CreateEnvelopeRequestSchema,
+  ErrorResponseSchema,
   SafeBrowsingFullHashSchema,
   SafeBrowsingLookupResponseSchema
 } from '../src/lib/gen/securl/v1/api_pb.js';
@@ -139,7 +140,7 @@ test('creator CAPTCHA retries after the provider script fails to load', async ({
   await expect(page.getByRole('heading', { name: 'Protected link ready' })).toBeVisible();
 });
 
-test('clean lookup runs in the final second and redirects immediately without leaking secrets', async ({
+test('clean lookup redirects without an artificial delay or leaking secrets', async ({
   page,
   context
 }) => {
@@ -160,15 +161,6 @@ test('clean lookup runs in the final second and redirects immediately without le
   const openPage = await context.newPage();
   let scanRequestedAt = 0;
   let destinationRequestedAt = 0;
-  await openPage.route('**/api/v1/envelopes/**', async (route) => {
-    const request = route.request();
-    if (request.method() === 'GET') {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, request.url().endsWith('/metadata') ? 700 : 1200);
-      await promise;
-    }
-    await route.continue();
-  });
   await openPage.route(safeLookupPattern, async (route) => {
     scanRequestedAt = Date.now();
     await route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: lookupResponse() });
@@ -179,18 +171,33 @@ test('clean lookup runs in the final second and redirects immediately without le
   });
   const navigationStartedAt = Date.now();
   await openPage.goto(link);
-  await expect(openPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible();
-  await expect(openPage.getByText('Decrypting destination…')).toBeVisible();
-  await expect(openPage.locator('code.hostname')).toHaveText('example.com');
-  const remainingBeforeScanBoundary = 3500 - (Date.now() - navigationStartedAt);
-  if (remainingBeforeScanBoundary > 0) await openPage.waitForTimeout(remainingBeforeScanBoundary);
-  expect(openPage.url()).toBe(link);
-  expect(scanRequestedAt).toBe(0);
-  await expect(openPage).toHaveURL(destination, { timeout: 3000 });
-  expect(scanRequestedAt - navigationStartedAt).toBeGreaterThanOrEqual(3800);
-  expect(scanRequestedAt - navigationStartedAt).toBeLessThan(5000);
+  await expect(openPage).toHaveURL(destination, { timeout: 4000 });
+  // Argon2d root-key derivation dominates; the former five-second gate is gone.
+  expect(destinationRequestedAt - navigationStartedAt).toBeLessThan(4000);
+  expect(scanRequestedAt).toBeGreaterThan(0);
   expect(destinationRequestedAt).toBeGreaterThanOrEqual(scanRequestedAt);
   expect(destinationRequestedAt - scanRequestedAt).toBeLessThan(1000);
+});
+
+test('clean redirect waits for a slow safety lookup', async ({ page, context }) => {
+  const destination = 'https://example.com/clean?a=1';
+  const { link } = await createProtectedLink(page, destination);
+  const openPage = await context.newPage();
+  const lookup = Promise.withResolvers<void>();
+  await openPage.route(safeLookupPattern, async (route) => {
+    await lookup.promise;
+    await route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: lookupResponse() });
+  });
+  await openPage.route(destination, (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<title>slow destination</title>' })
+  );
+  await openPage.goto(link);
+  await expect(openPage.locator('code.hostname')).toHaveText('example.com');
+  await expect(openPage.getByText('Checking the destination…')).toBeVisible();
+  await openPage.waitForTimeout(300);
+  expect(openPage.url()).toBe(link);
+  lookup.resolve();
+  await expect(openPage).toHaveURL(destination);
 });
 
 test('New link leaves the open-link state and returns to the creator', async ({ page, context }) => {
@@ -233,7 +240,7 @@ test('wrong password retries locally without refetching a non-burn envelope', as
 
   await openPage.getByLabel('Password', { exact: true }).fill(password);
   await openPage.getByRole('button', { name: 'Continue' }).click();
-  await expect(openPage.locator('code.hostname')).toHaveText('example.com', { timeout: 20_000 });
+  await expect(openPage).toHaveURL(destination, { timeout: 20_000 });
   expect(envelopeRequests).toBe(1);
 });
 
@@ -254,9 +261,7 @@ test('password worker load failure falls back before burn access', async ({ page
   await expect(fallbackPage.getByRole('heading', { name: 'Password required' })).toBeVisible();
   await fallbackPage.getByLabel('Password', { exact: true }).fill(password);
   await fallbackPage.getByRole('button', { name: 'Continue' }).click();
-  await expect(fallbackPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible({
-    timeout: 20_000
-  });
+  await expect(fallbackPage).toHaveURL('https://example.com/burn-after-read', { timeout: 20_000 });
   expect(accessRequests).toBe(1);
 });
 
@@ -299,56 +304,6 @@ test('forever TTL is encoded as zero and creates a non-expiring link', async ({ 
   await expect(page.getByRole('heading', { name: 'Protected link ready' })).toBeVisible();
 });
 
-test('manual choice skips the delay but still waits for a clean safety check', async ({ page, context }) => {
-  const destination = 'https://example.com/clean?a=1';
-  const { link } = await createProtectedLink(page, destination);
-  const openPage = await context.newPage();
-  const lookup = Promise.withResolvers<void>();
-  await openPage.route(safeLookupPattern, async (route) => {
-    await lookup.promise;
-    await route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: lookupResponse() });
-  });
-  await openPage.route(destination, (route) =>
-    route.fulfill({ status: 200, contentType: 'text/html', body: '<title>manual destination</title>' })
-  );
-  await openPage.goto(link);
-  await expect(openPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible();
-  const startedAt = Date.now();
-  await openPage.getByRole('button', { name: 'Check now and open' }).click();
-  await openPage.waitForTimeout(300);
-  expect(openPage.url()).toBe(link);
-  lookup.resolve();
-  await expect(openPage).toHaveURL(destination);
-  expect(Date.now() - startedAt).toBeLessThan(2000);
-});
-
-test('immediate open bypasses the delay before the scheduled scan starts', async ({ page, context }) => {
-  const destination = 'https://example.com/open-without-scanning';
-  const { link } = await createProtectedLink(page, destination);
-  const openPage = await context.newPage();
-  let lookupRequests = 0;
-  await openPage.route(safeLookupPattern, async (route) => {
-    lookupRequests += 1;
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/x-protobuf',
-      body: lookupResponse()
-    });
-  });
-  await openPage.route(destination, (route) =>
-    route.fulfill({ status: 200, contentType: 'text/html', body: '<title>unscanned destination</title>' })
-  );
-
-  await openPage.goto(link);
-  await expect(openPage.getByRole('heading', { name: 'Checking destination safety' })).toBeVisible();
-  await expect(openPage.locator('code.hostname')).toHaveText('example.com');
-  const startedAt = Date.now();
-  await openPage.getByRole('button', { name: 'Open without scanning' }).click();
-  await expect(openPage).toHaveURL(destination, { timeout: 3000 });
-  expect(Date.now() - startedAt).toBeLessThan(2000);
-  expect(lookupRequests).toBe(0);
-});
-
 test('threat response blocks every redirect', async ({ page, context }) => {
   const destination = 'https://example.com/clean?a=1';
   const { link } = await createProtectedLink(page, destination);
@@ -367,10 +322,8 @@ test('threat response blocks every redirect', async ({ page, context }) => {
     await route.abort();
   });
   await openPage.goto(link);
-  await expect(openPage.getByRole('heading', { name: 'Deceptive site ahead' })).toBeVisible({
-    timeout: 7000
-  });
-  await openPage.waitForTimeout(5500);
+  await expect(openPage.getByRole('heading', { name: 'Deceptive site ahead' })).toBeVisible();
+  await openPage.waitForTimeout(500);
   expect(openPage.url()).toBe(link);
   expect(destinationRequests).toBe(0);
 });
@@ -386,10 +339,8 @@ test('503 remains gated until explicit unscanned choice', async ({ page, context
     route.fulfill({ status: 200, contentType: 'text/html', body: '<title>unscanned destination</title>' })
   );
   await openPage.goto(link);
-  await expect(openPage.getByRole('heading', { name: 'Safety check unavailable' })).toBeVisible({
-    timeout: 7000
-  });
-  await openPage.waitForTimeout(5200);
+  await expect(openPage.getByRole('heading', { name: 'Safety check unavailable' })).toBeVisible();
+  await openPage.waitForTimeout(500);
   expect(openPage.url()).toBe(link);
   await openPage.getByRole('button', { name: 'Open without safety check' }).click();
   await expect(openPage).toHaveURL(destination);
@@ -428,10 +379,138 @@ test('only the first burn-link client can retry a wrong password locally', async
 
   await openPage.getByLabel('Password', { exact: true }).fill(password);
   await openPage.getByRole('button', { name: 'Continue' }).click();
-  await expect(openPage.locator('code.hostname')).toHaveText('example.com', { timeout: 20_000 });
+  await expect(openPage).toHaveURL(destination, { timeout: 20_000 });
   expect(accessRequests).toBe(1);
 
   const secondClient = await context.newPage();
   await secondClient.goto(link);
   await expect(secondClient.getByText('This link is no longer available.')).toBeVisible();
+});
+
+async function createPaste(page: Page, markdown: string, options: { burn?: boolean } = {}): Promise<string> {
+  await mockTurnstile(page);
+  await page.goto('/');
+  await page.getByRole('radio', { name: 'Markdown paste' }).check();
+  await page.getByLabel('Markdown', { exact: true }).fill(markdown);
+  if (options.burn) await page.getByRole('checkbox', { name: /Burn after reading/ }).check();
+  await page.getByRole('button', { name: 'Create encrypted paste' }).click();
+  await expect(page.getByRole('heading', { name: 'Protected link ready' })).toBeVisible();
+  return (await page.locator('code').textContent())!;
+}
+
+// Playwright's fill() types through the input pipeline and is too slow for 100+ KiB bodies.
+async function fillLarge(page: Page, value: string): Promise<void> {
+  await page.getByLabel('Markdown', { exact: true }).evaluate((element, text) => {
+    const textarea = element as HTMLTextAreaElement;
+    textarea.value = text;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }, value);
+}
+
+test('Markdown paste is compressed, encrypted, and rendered without leaking content', async ({ page, context }) => {
+  const secret = 'pastebin-secret-marker';
+  const markdown = `# Notes\n\n${secret}\n\n[docs](https://example.com/docs)\n\n<img src=x onerror="window.xssFired=1">\n\n${'- item\n'.repeat(400)}`;
+  let requestBody = Buffer.alloc(0);
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/api/v1/envelopes')) {
+      requestBody = request.postDataBuffer() ?? Buffer.alloc(0);
+    }
+  });
+  const link = await createPaste(page, markdown);
+  expect(requestBody.includes(Buffer.from(secret))).toBe(false);
+  const envelope = fromBinary(CreateEnvelopeRequestSchema, requestBody).envelope!;
+  // 400 repeated list items deflate to well under one 1 KiB padding bucket.
+  expect(envelope.ciphertext.length).toBeLessThan(2 * 1024 + 64);
+
+  const openPage = await context.newPage();
+  let lookupRequests = 0;
+  await openPage.route(safeLookupPattern, (route) => {
+    lookupRequests += 1;
+    return route.abort();
+  });
+  await openPage.goto(link);
+  await expect(openPage.getByRole('heading', { name: 'Encrypted paste', exact: true })).toBeVisible();
+  await expect(openPage.locator('article.markdown-body h1')).toHaveText('Notes');
+  await expect(openPage.locator('article.markdown-body')).toContainText(secret);
+  await expect(openPage.locator('article.markdown-body a')).toHaveAttribute('rel', 'noopener noreferrer nofollow');
+  await expect(openPage.locator('article.markdown-body img')).toHaveCount(0);
+  expect(await openPage.evaluate(() => 'xssFired' in window)).toBe(false);
+  expect(lookupRequests).toBe(0);
+
+  await openPage.getByRole('button', { name: 'Show Markdown' }).click();
+  await expect(openPage.locator('pre.paste-source')).toContainText('<img src=x onerror="window.xssFired=1">');
+});
+
+test('burn-after-read paste opens once', async ({ page, context }) => {
+  const link = await createPaste(page, 'one-time **paste**', { burn: true });
+  const first = await context.newPage();
+  await first.goto(link);
+  await expect(first.locator('article.markdown-body strong')).toHaveText('paste');
+  await expect(first.getByText('deleted from the server')).toBeVisible();
+  const second = await context.newPage();
+  await second.goto(link);
+  await expect(second.getByText('This link is no longer available.')).toBeVisible();
+});
+
+test('oversized paste reports its compressed size before anything is uploaded', async ({ page }) => {
+  let createRequests = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/api/v1/envelopes')) createRequests += 1;
+  });
+  await mockTurnstile(page);
+  await page.goto('/');
+  await page.getByRole('radio', { name: 'Markdown paste' }).check();
+  await expect(page.getByText('Up to 64.0 KiB after compression.')).toBeVisible();
+  // Random base64 barely compresses, so ~120 KiB of it stays far above the 64 KiB limit.
+  await fillLarge(page, await page.evaluate(() => {
+    const bytes = new Uint8Array(90_000);
+    for (let offset = 0; offset < bytes.length; offset += 65_536) {
+      crypto.getRandomValues(bytes.subarray(offset, offset + 65_536));
+    }
+    return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''));
+  }));
+  await page.getByRole('button', { name: 'Create encrypted paste' }).click();
+  await expect(page.getByRole('alert')).toHaveText(
+    /^This paste is \d+\.\d KiB after compression; the limit is 64\.0 KiB\. Shorten it and try again\.$/
+  );
+  expect(createRequests).toBe(0);
+});
+
+test('compressible paste larger than the limit before compression is accepted', async ({ page, context }) => {
+  const markdown = '| key | value |\n|---|---|\n' + '| repeated row | same value |\n'.repeat(10_000);
+  expect(markdown.length).toBeGreaterThan(256 * 1024);
+  await mockTurnstile(page);
+  await page.goto('/');
+  await page.getByRole('radio', { name: 'Markdown paste' }).check();
+  await fillLarge(page, markdown);
+  await page.getByRole('button', { name: 'Create encrypted paste' }).click();
+  await expect(page.getByRole('heading', { name: 'Protected link ready' })).toBeVisible();
+  const link = (await page.locator('code').textContent())!;
+  const openPage = await context.newPage();
+  await openPage.goto(link);
+  await expect(openPage.locator('article.markdown-body tbody tr')).toHaveCount(10_000);
+});
+
+test('server-side envelope limit surfaces as a size error', async ({ page }) => {
+  await mockTurnstile(page);
+  await page.route('**/api/v1/envelopes', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await route.fulfill({
+      status: 413,
+      contentType: 'application/x-protobuf',
+      body: Buffer.from(
+        toBinary(ErrorResponseSchema, create(ErrorResponseSchema, {
+          code: 'envelope_too_large',
+          message: 'The encrypted content is too large.'
+        }))
+      )
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('radio', { name: 'Markdown paste' }).check();
+  await page.getByLabel('Markdown', { exact: true }).fill('small');
+  await page.getByRole('button', { name: 'Create encrypted paste' }).click();
+  await expect(page.getByRole('alert')).toHaveText(
+    'This paste is over the 64.0 KiB compressed limit. Shorten it and try again.'
+  );
 });

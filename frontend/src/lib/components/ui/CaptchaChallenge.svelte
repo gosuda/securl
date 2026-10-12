@@ -16,7 +16,7 @@
 
 <script lang="ts">
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
-  import { CaptchaProvider } from '$lib/gen/securl/v1/api_pb.js';
+  import { CaptchaProvider } from '#lib/gen/securl/v1/api_pb.js';
   import Button from './Button.svelte';
   import Spinner from './Spinner.svelte';
 
